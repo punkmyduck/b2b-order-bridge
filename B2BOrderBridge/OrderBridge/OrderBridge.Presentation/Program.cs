@@ -1,3 +1,4 @@
+using Mediator;
 
 namespace OrderBridge.Presentation
 {
@@ -9,6 +10,10 @@ namespace OrderBridge.Presentation
 
             // Add services to the container.
 
+            builder.Services.AddMediator((MediatorOptions options) =>
+            {
+                options.ServiceLifetime = ServiceLifetime.Scoped;
+            });
             builder.Services.AddControllers();
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddOpenApi();

@@ -13,6 +13,10 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["OrderBridge/OrderBridge.Presentation/OrderBridge.Presentation.csproj", "OrderBridge/OrderBridge.Presentation/"]
+COPY ["OrderBridge/OrderBridge.Application/OrderBridge.Application.csproj", "OrderBridge/OrderBridge.Application/"]
+COPY ["OrderBridge/OrderBridge.Domain/OrderBridge.Domain.csproj", "OrderBridge/OrderBridge.Domain/"]
+COPY ["Shared/Shared.Application/Shared.Application.csproj", "Shared/Shared.Application/"]
+COPY ["Shared/Shared.Domain/Shared.Domain.csproj", "Shared/Shared.Domain/"]
 RUN dotnet restore "./OrderBridge/OrderBridge.Presentation/OrderBridge.Presentation.csproj"
 COPY . .
 WORKDIR "/src/OrderBridge/OrderBridge.Presentation"

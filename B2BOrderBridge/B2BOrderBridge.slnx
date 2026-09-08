@@ -5,4 +5,12 @@
     <Project Path="OrderBridge/OrderBridge.Infrastructure/OrderBridge.Infrastructure.csproj" Id="6955f1f2-c38d-4f58-9ab9-4b7416d65a67" />
     <Project Path="OrderBridge/OrderBridge.Presentation/OrderBridge.Presentation.csproj" Id="fedc6c3e-4c65-4366-8ee9-ae9e7cb6853f" />
   </Folder>
+  <Folder Name="/Shared/">
+    <File Path="Shared/README.md" />
+    <Project Path="Shared/Shared.Application/Shared.Application.csproj" />
+    <Project Path="Shared/Shared.Domain/Shared.Domain.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/Shared.Tests/Shared.Tests.csproj" />
+  </Folder>
 </Solution>
