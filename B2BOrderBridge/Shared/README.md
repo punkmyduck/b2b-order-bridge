@@ -128,3 +128,43 @@ dotnet test B2BOrderBridge.slnx
 
 Shared.Tests проверяет CQRS dispatch, DI scopes, cancellation, события агрегата,
 защиту Result и граничные случаи пагинации. Примерные сообщения находятся только в тестах.
+
+## Guard
+
+Guard в Shared.Domain возвращает нормализованное значение: его нужно присвоить полю.
+Он не изменяет исходные аргументы автоматически и не подключён как глобальный middleware.
+
+```csharp
+CompanyName = Guard.RequiredString(companyName, maxLength: 200);
+ContactEmail = Guard.OptionalString(contactEmail, maxLength: 254);
+Id = Guard.NotEmpty(id);
+Quantity = Guard.Positive(quantity);
+UnitPrice = Guard.Money(unitPrice);
+PaymentAmount = Guard.Money(paymentAmount, allowZero: false);
+DiscountPercent = Guard.InRange(discountPercent, 0m, 100m);
+Status = Guard.DefinedEnum(status);
+```
+
+RequiredString делает Trim и проверяет длину после нормализации.
+OptionalString преобразует null/пустую/пробельную строку в null.
+Внутренние пробелы и регистр сохраняются. Длина измеряется в UTF-16 code units.
+Трим нужно вызывать только для полей, где пробелы по краям незначимы;
+не применяйте его к секретам, подписям и исходному webhook payload.
+Проверка формата email/ИНН и других реквизитов остаётся отдельным бизнес-правилом.
+
+Money принимает decimal, отклоняет отрицательные суммы и лишнюю дробную точность,
+по умолчанию допускает ноль и два знака после запятой. Округления нет:
+1.234 отклоняется, 1.230 принимается. decimalPlaces можно задать от 0 до 28
+согласно валюте/типу цены; Guard не определяет валюту и ограничения колонки БД.
+Скидки, возвраты и другие подписанные суммы требуют своего правила.
+Округление рассчитанного итога задаётся отдельно в бизнес-логике.
+
+Positive, NonNegative и InRange работают с числовыми типами и отклоняют NaN/Infinity.
+InRange включает обе границы. NotNull проверяет ссылку, NotEmpty — Guid.
+DefinedEnum допускает только объявленные значения; составные Flags требуют отдельного правила.
+
+Неверные данные дают DomainException с кодом guard.* и именем аргумента
+(CallerArgumentExpression; можно передать parameterName явно).
+Неверная конфигурация самого Guard, например отрицательная длина, даёт ArgumentException.
+Guard не возвращает Result: преобразование доменной ошибки в ответ приложения/API
+нужно реализовать на границе обработки запроса.
