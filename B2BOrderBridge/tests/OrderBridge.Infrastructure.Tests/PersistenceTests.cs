@@ -1,13 +1,18 @@
+using OrderBridge.Application.ValueObjects;
+using OrderBridge.Application.Services.Implementations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using OrderBridge.Application.Features.Orders.Commands;
+using OrderBridge.Application.Features.Orders.Queries;
+using OrderBridge.Application.Features.Orders.Repositories;
 using OrderBridge.Domain.Models;
 using OrderBridge.Domain.ValueObjects;
 using OrderBridge.Infrastructure;
 using OrderBridge.Infrastructure.Persistence;
 using Shared.Application.Persistence;
 using Shared.Application.Services;
+using Shared.Application.Results;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -119,14 +124,42 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         {
             var services = scope.ServiceProvider;
             var handler = new CreateOrderCommandHandler(services.GetRequiredService<IRepository<Order, Guid>>(),
-                services.GetRequiredService<IUnitOfWork>(), services.GetRequiredService<IDateTimeOffsetProvider>());
+                services.GetRequiredService<IRepository<OrderIntegration, Guid>>(), services.GetRequiredService<IUnitOfWork>(), services.GetRequiredService<IDateTimeOffsetProvider>(), new OrderIntegrationPlanner());
             var result = await handler.Handle(new CreateOrderCommand("portal", Guid.NewGuid().ToString(),
-                new CustomerSnapshot("ACME", "123", "test@example.com"), "RUB",
-                [new OrderLine(Guid.NewGuid(), "SKU", "Item", 1m, 10m)]), CancellationToken.None);
-            id = result.Value;
+                new CustomerSnapshotDto("ACME", "123", "test@example.com"), "RUB",
+                [new OrderLineDto("SKU", "Item", 1m, 10m)]), CancellationToken.None);
+            id = result.Value.Id;
         }
         using var read = fixture.Services.CreateScope();
         Assert.True(await read.ServiceProvider.GetRequiredService<IReadRepository<Order, Guid>>().ExistsAsync(id));
+    }
+
+    [Fact]
+    public async Task Get_by_id_projects_summary_without_tracking_and_reports_not_found()
+    {
+        var order = Create();
+        using (var writeScope = fixture.Services.CreateScope())
+        {
+            writeScope.ServiceProvider.GetRequiredService<IRepository<Order, Guid>>().Add(order);
+            await writeScope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+
+        using var readScope = fixture.Services.CreateScope();
+        var services = readScope.ServiceProvider;
+        var handler = new GetOrderByIdQueryHandler(services.GetRequiredService<IOrderReadRepository>());
+
+        var found = await handler.Handle(new GetOrderByIdQuery(order.Id), CancellationToken.None);
+
+        Assert.True(found.IsSuccess);
+        Assert.Equal(order.Id, found.Value.Id);
+        Assert.Equal(order.Customer.CompanyName, found.Value.Customer.CompanyName);
+        Assert.Empty(services.GetRequiredService<OrderBridgeDbContext>().ChangeTracker.Entries());
+
+        var missing = await handler.Handle(new GetOrderByIdQuery(Guid.NewGuid()), CancellationToken.None);
+
+        Assert.True(missing.IsFailure);
+        Assert.Equal(ErrorType.NotFound, missing.Error!.Type);
+        Assert.Equal("Order.NotFound", missing.Error.Code);
     }
 }
 
