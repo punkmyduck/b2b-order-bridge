@@ -1,6 +1,30 @@
-@OrderBridge.Presentation_HostAddress = http://localhost:5224
+@OrderBridge.Presentation_HostAddress = http://localhost:8088
 
-GET {{OrderBridge.Presentation_HostAddress}}/weatherforecast/
+POST {{OrderBridge.Presentation_HostAddress}}/api/orders
+Content-Type: application/json
+
+{
+  "sourceSystem": "marketplace",
+  "externalOrderId": "ORDER-421",
+  "customer": {
+    "companyName": "ACME LLC",
+    "taxId": "7701234567",
+    "contactEmail": "orders@example.com"
+  },
+  "currency": "RUB",
+  "lines": [
+    {
+      "sku": "SKU-001",
+      "name": "Integration service",
+      "quantity": 1,
+      "unitPrice": 15000
+    }
+  ]
+}
+
+###
+
+GET {{OrderBridge.Presentation_HostAddress}}/api/orders/00000000-0000-0000-0000-000000000000
 Accept: application/json
 
 ###
