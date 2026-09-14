@@ -1,4 +1,5 @@
-using Mediator;
+using OrderBridge.Infrastructure;
+using OrderBridge.Application.Features.Orders.Commands;
 
 namespace OrderBridge.Presentation
 {
@@ -10,10 +11,16 @@ namespace OrderBridge.Presentation
 
             // Add services to the container.
 
-            builder.Services.AddMediator((MediatorOptions options) =>
+            builder.Services.AddMediatR(options =>
             {
-                options.ServiceLifetime = ServiceLifetime.Scoped;
+                options.Lifetime = ServiceLifetime.Scoped;
+                options.RegisterServicesFromAssemblyContaining<CreateOrderCommandHandler>();
+                options.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
             });
+            builder.Services.AddServices();
+            builder.Services.AddPersistence(
+                builder.Configuration.GetConnectionString("OrderBridge")
+                ?? throw new InvalidOperationException("ConnectionStrings:OrderBridge is required."));
             builder.Services.AddControllers();
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddOpenApi();
@@ -37,3 +44,5 @@ namespace OrderBridge.Presentation
         }
     }
 }
+
+

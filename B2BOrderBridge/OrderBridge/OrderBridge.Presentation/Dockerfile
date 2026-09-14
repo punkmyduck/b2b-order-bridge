@@ -17,6 +17,7 @@ COPY ["OrderBridge/OrderBridge.Application/OrderBridge.Application.csproj", "Ord
 COPY ["OrderBridge/OrderBridge.Domain/OrderBridge.Domain.csproj", "OrderBridge/OrderBridge.Domain/"]
 COPY ["Shared/Shared.Application/Shared.Application.csproj", "Shared/Shared.Application/"]
 COPY ["Shared/Shared.Domain/Shared.Domain.csproj", "Shared/Shared.Domain/"]
+COPY ["OrderBridge/OrderBridge.Infrastructure/OrderBridge.Infrastructure.csproj", "OrderBridge/OrderBridge.Infrastructure/"]
 RUN dotnet restore "./OrderBridge/OrderBridge.Presentation/OrderBridge.Presentation.csproj"
 COPY . .
 WORKDIR "/src/OrderBridge/OrderBridge.Presentation"
@@ -32,3 +33,4 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "OrderBridge.Presentation.dll"]
+

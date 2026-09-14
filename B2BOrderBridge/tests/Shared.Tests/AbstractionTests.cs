@@ -1,4 +1,4 @@
-using Mediator;
+using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.Application.Pagination;
 using Shared.Application.Results;
@@ -112,10 +112,11 @@ public sealed class AbstractionTests
     {
         var services = new ServiceCollection();
         services.AddScoped<SampleState>();
-        services.AddMediator((MediatorOptions options) =>
+        services.AddLogging();
+        services.AddMediatR(options =>
         {
-            options.ServiceLifetime = ServiceLifetime.Scoped;
-            options.Assemblies = [typeof(SetValue)];
+            options.Lifetime = ServiceLifetime.Scoped;
+            options.RegisterServicesFromAssemblyContaining<SetValue>();
         });
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -142,11 +143,11 @@ public sealed record SetValue(int Value) : Shared.Application.Messaging.ICommand
 public sealed class SetValueHandler(SampleState state)
     : Shared.Application.Messaging.ICommandHandler<SetValue>
 {
-    public ValueTask<Result> Handle(SetValue command, CancellationToken cancellationToken)
+    public Task<Result> Handle(SetValue command, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         state.Value = command.Value;
-        return ValueTask.FromResult(Result.Success());
+        return Task.FromResult(Result.Success());
     }
 }
 
@@ -155,14 +156,15 @@ public sealed record GetValue : Shared.Application.Messaging.IQuery<int>;
 public sealed class GetValueHandler(SampleState state)
     : Shared.Application.Messaging.IQueryHandler<GetValue, int>
 {
-    public ValueTask<Result<int>> Handle(GetValue query, CancellationToken cancellationToken)
-        => ValueTask.FromResult(Result<int>.Success(state.Value));
+    public Task<Result<int>> Handle(GetValue query, CancellationToken cancellationToken)
+        => Task.FromResult(Result<int>.Success(state.Value));
 }
 
 public sealed record Echo(int Value) : Shared.Application.Messaging.ICommand<int>;
 
 public sealed class EchoHandler : Shared.Application.Messaging.ICommandHandler<Echo, int>
 {
-    public ValueTask<Result<int>> Handle(Echo command, CancellationToken cancellationToken)
-        => ValueTask.FromResult(Result<int>.Success(command.Value));
+    public Task<Result<int>> Handle(Echo command, CancellationToken cancellationToken)
+        => Task.FromResult(Result<int>.Success(command.Value));
 }
+

@@ -59,7 +59,7 @@ public sealed class ResultConversionTests
         Assert.Equal("order.not_found", failure.Error!.Code);
     }
 
-    private static async ValueTask<Result<int>> Handle(bool exists)
+    private static async Task<Result<int>> Handle(bool exists)
     {
         var value = await Task.FromResult(42);
 
@@ -69,3 +69,4 @@ public sealed class ResultConversionTests
         return value;
     }
 }
+
