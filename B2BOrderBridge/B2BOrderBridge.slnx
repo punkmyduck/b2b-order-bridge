@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Elements/">
+    <File Path="docker-compose.yml" />
+  </Folder>
   <Folder Name="/OrderBridge/">
     <Project Path="OrderBridge/OrderBridge.Application/OrderBridge.Application.csproj" Id="a7c5e1e2-b3c3-400d-996d-0ff90402a766" />
     <Project Path="OrderBridge/OrderBridge.Domain/OrderBridge.Domain.csproj" Id="892b28fc-7776-4d5f-a0c5-cb2d8fc3f9a9" />
@@ -11,10 +14,12 @@
     <Project Path="Shared/Shared.Domain/Shared.Domain.csproj" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="tests/OrderBridge.Infrastructure.Tests/OrderBridge.Infrastructure.Tests.csproj" />
     <Project Path="tests/OrderBridge.Domain.Tests/OrderBridge.Domain.Tests.csproj" />
+    <Project Path="tests/OrderBridge.Infrastructure.Tests/OrderBridge.Infrastructure.Tests.csproj" />
+    <Project Path="tests/OrderBridge.Presentation.Tests/OrderBridge.Presentation.Tests.csproj" />
     <Project Path="tests/Shared.Tests/Shared.Tests.csproj" />
   </Folder>
 </Solution>
+
 
 
