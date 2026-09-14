@@ -28,18 +28,21 @@ unique constraint и семантика идемпотентности отно�
 
 ## Настройка и миграции
 
-Из каталога B2BOrderBridge установите переменную окружения в PowerShell, подставив
-свои локальные параметры подключения (не сохраняйте пароль в репозитории):
+Из каталога `B2BOrderBridge` всю систему можно запустить одной командой:
 
 ```powershell
-$env:ConnectionStrings__OrderBridge = 'Host=localhost;Port=5432;Database=orderbridge;Username=postgres;Password=<local-password>'
-dotnet ef database update --project OrderBridge/OrderBridge.Infrastructure
-dotnet run --project OrderBridge/OrderBridge.Presentation
+docker compose up --build
 ```
 
-Для dotnet ef используется design-time factory. Приложение требует
-ConnectionStrings:OrderBridge при старте; миграции не применяются автоматически.
-Версия dotnet-ef для этой схемы — 10.0.8.
+Swagger UI будет доступен по адресу `http://localhost:8088/swagger`.
+
+Параметры по умолчанию в `docker-compose.yml`, design-time factory и локальном
+`appsettings.Development.json` совпадают. Их можно переопределить переменными
+`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` для Docker и
+`ConnectionStrings__OrderBridge` для API и `dotnet ef`. Локальный development-файл
+игнорируется Git. В Development миграции применяются при старте, если включён параметр
+`Persistence:ApplyMigrationsOnStartup`; Compose включает его для удобства локального запуска.
+Версия `dotnet-ef` для этой схемы — 10.0.8.
 
 ```powershell
 dotnet test B2BOrderBridge.slnx

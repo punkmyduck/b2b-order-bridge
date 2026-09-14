@@ -25,9 +25,9 @@ Value objects реализуются через record. DomainEvents не явл
 Используется [MediatR](https://github.com/LuckyPennySoftware/MediatR).
 Shared ICommand/IQuery наследуют IRequest, обработчики — IRequestHandler.
 Обработчики возвращают Task<Result<T>>; source generator не используется.
-В Presentation вызывается AddMediatR с RegisterServicesFromAssemblyContaining<CreateOrderCommandHandler>.
-Lifetime медиатора настроен как Scoped; обработчики регистрируются библиотекой как Transient
-и разрешаются внутри текущего scope, используя тот же scoped DbContext.
+`OrderBridge.Application.AddApplication` сканирует всю сборку Application и автоматически
+регистрирует command/query handlers. Lifetime медиатора и обработчиков настроен как Scoped,
+поэтому они используют тот же scoped DbContext в рамках запроса.
 Ключ лицензии можно передать через MediatR__LicenseKey; условия лицензии:
 https://github.com/LuckyPennySoftware/MediatR/blob/master/LICENSE.md
 
@@ -169,3 +169,20 @@ DefinedEnum допускает только объявленные значен�
 Guard не возвращает Result: преобразование доменной ошибки в ответ приложения/API
 нужно реализовать на границе обработки запроса.
 
+
+## FluentValidation
+
+ValidationBehaviour<TRequest,TResponse> подключается через AddOpenBehavior в AddMediatR.
+`AddApplication` регистрирует все валидаторы сборки Application как Transient.
+Проверки выполняются последовательно через ValidateAsync с CancellationToken:
+валидаторы могут использовать один scoped DbContext.
+При ошибках выбрасывается FluentValidation.ValidationException, handler не вызывается.
+Presentation преобразует исключение в 400 ValidationProblemDetails с errors по полям,
+code = validation.failed и traceId. Result остаётся для ожидаемых исходов handler.
+Прямой вызов handler.Handle обходит pipeline — для автоматической проверки вызывайте ISender.Send.
+
+CreateOrderCommandValidator проверяет обязательные данные, длины после Trim,
+поддерживаемую валюту, покупателя, позиции, количество, точность цены и переполнение сумм.
+Он не изменяет DTO; нормализацию по-прежнему выполняет домен.
+Для контактного email дополнительно проверяется базовый формат. Проверка формата ИНН
+остаётся отдельным бизнес-правилом.
