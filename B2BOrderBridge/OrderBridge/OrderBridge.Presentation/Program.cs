@@ -1,36 +1,43 @@
+using System.Text.Json.Serialization;
+using OrderBridge.Application;
+using OrderBridge.Presentation.ExceptionHandlers;
 using OrderBridge.Infrastructure;
-using OrderBridge.Application.Features.Orders.Commands;
 
 namespace OrderBridge.Presentation
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
 
-            builder.Services.AddMediatR(options =>
-            {
-                options.Lifetime = ServiceLifetime.Scoped;
-                options.RegisterServicesFromAssemblyContaining<CreateOrderCommandHandler>();
-                options.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
-            });
+            builder.Services.AddApplication(builder.Configuration["MediatR:LicenseKey"]);
+            builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
+            builder.Services.AddProblemDetails();
             builder.Services.AddServices();
-            builder.Services.AddPersistence(
-                builder.Configuration.GetConnectionString("OrderBridge")
-                ?? throw new InvalidOperationException("ConnectionStrings:OrderBridge is required."));
-            builder.Services.AddControllers();
-            // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-            builder.Services.AddOpenApi();
+            builder.Services.AddPersistence(builder.Configuration);
+            builder.Services.AddControllers()
+                .AddJsonOptions(options =>
+                    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
 
             var app = builder.Build();
 
-            // Configure the HTTP request pipeline.
+            if (app.Environment.IsDevelopment() &&
+                builder.Configuration.GetValue<bool>("Persistence:ApplyMigrationsOnStartup"))
+            {
+                await app.Services.ApplyPersistenceMigrationsAsync();
+            }
+
+            app.UseExceptionHandler();
+
             if (app.Environment.IsDevelopment())
             {
-                app.MapOpenApi();
+                app.UseSwagger();
+                app.UseSwaggerUI();
             }
 
             app.UseHttpsRedirection();
@@ -44,5 +51,3 @@ namespace OrderBridge.Presentation
         }
     }
 }
-
-
