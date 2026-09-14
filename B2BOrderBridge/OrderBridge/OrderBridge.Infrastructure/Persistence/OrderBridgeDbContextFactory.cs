@@ -8,7 +8,7 @@ public sealed class OrderBridgeDbContextFactory : IDesignTimeDbContextFactory<Or
     public OrderBridgeDbContext CreateDbContext(string[] args)
     {
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__OrderBridge")
-            ?? "Host=localhost;Database=orderbridge;Username=postgres";
+            ?? "Host=localhost;Port=5432;Database=orderbridge;Username=orderbridge;Password=orderbridge_dev";
         return new(new DbContextOptionsBuilder<OrderBridgeDbContext>().UseNpgsql(connectionString).Options);
     }
 }
