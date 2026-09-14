@@ -1,7 +1,7 @@
 # Shared building blocks
 
 Общие библиотеки на .NET 10. Shared.Domain не зависит от фреймворков;
-Shared.Application использует Shared.Domain и Mediator.Abstractions 3.0.2.
+Shared.Application использует Shared.Domain и MediatR 14.2.0.
 
 ## Domain
 
@@ -22,12 +22,14 @@ Value objects реализуются через record. DomainEvents не явл
 - ICommand<T> / ICommandHandler<TCommand, T>: команда с Result<T>.
 - IQuery<T> / IQueryHandler<TQuery, T>: запрос с Result<T>.
 
-Используется [Mediator](https://github.com/martinothamar/Mediator), лицензия MIT.
-Обработчики реализуют ValueTask<Result<T>> Handle(..., CancellationToken).
-Mediator.SourceGenerator устанавливается только в исполняемый проект;
-в Presentation уже есть AddMediator со scoped lifetime. Генератор автоматически
-обнаруживает конкретные сообщения и обработчики в доступных сборках.
-Для отдельных worker-проектов нужна своя регистрация; на обработку задания создавайте DI scope.
+Используется [MediatR](https://github.com/LuckyPennySoftware/MediatR).
+Shared ICommand/IQuery наследуют IRequest, обработчики — IRequestHandler.
+Обработчики возвращают Task<Result<T>>; source generator не используется.
+В Presentation вызывается AddMediatR с RegisterServicesFromAssemblyContaining<CreateOrderCommandHandler>.
+Lifetime медиатора настроен как Scoped; обработчики регистрируются библиотекой как Transient
+и разрешаются внутри текущего scope, используя тот же scoped DbContext.
+Ключ лицензии можно передать через MediatR__LicenseKey; условия лицензии:
+https://github.com/LuckyPennySoftware/MediatR/blob/master/LICENSE.md
 
 Пример будущего обработчика в OrderBridge.Application:
 
@@ -40,7 +42,7 @@ public sealed record GetOrder(Guid Id) : IQuery<OrderDto>;
 public sealed class GetOrderHandler(IOrderRepository orders)
     : IQueryHandler<GetOrder, OrderDto>
 {
-    public async ValueTask<Result<OrderDto>> Handle(
+    public async Task<Result<OrderDto>> Handle(
         GetOrder query, CancellationToken cancellationToken)
     {
         var order = await orders.GetByIdAsync(query.Id, cancellationToken);
@@ -55,12 +57,10 @@ public sealed record OrderDto(Guid Id);
 ```
 
 Из endpoint/controller вызывайте await sender.Send(new GetOrder(id), cancellationToken),
-где sender — Mediator.ISender. Не подключайте одновременно using Mediator и
-using Shared.Application.Messaging при объявлении контрактов: имена ICommand/IQuery совпадают.
+где sender — MediatR.ISender.
 
-Общие pipeline-контракты уже предоставляет Mediator.IPipelineBehavior<TMessage, TResponse>.
-Конкретные validation/logging behaviors добавляются в Application по необходимости
-и регистрируются через options.PipelineBehaviors в AddMediator.
+Pipeline-контракт — MediatR.IPipelineBehavior<TRequest, TResponse>.
+Behaviors регистрируются через AddBehavior/AddOpenBehavior в AddMediatR.
 
 ## Results
 
@@ -76,9 +76,9 @@ HTTP-коды и сериализация ошибок относятся к Pre
 - Error → Result / Result<T>: ошибка с сохранением исходного Error.
 - Для команды без значения успешный исход остаётся return Result.Success().
 
-В async Task<Result<T>> / async ValueTask<Result<T>> можно писать return value
-или return error. В синхронном методе, возвращающем ValueTask<Result<T>>, используйте
-ValueTask.FromResult<Result<T>>(value): generic-аргумент задаёт целевой тип преобразования.
+В async Task<Result<T>> можно писать return value
+или return error. В синхронном методе, возвращающем Task<Result<T>>, используйте
+Task.FromResult<Result<T>>(value): generic-аргумент задаёт целевой тип преобразования.
 
 Null в переменной типа Error отклоняется. Nullable-значение типа T сохраняется как успех.
 Не пишите return null: это null-ссылка на сам Result; используйте Success(null)
@@ -168,3 +168,4 @@ DefinedEnum допускает только объявленные значен�
 Неверная конфигурация самого Guard, например отрицательная длина, даёт ArgumentException.
 Guard не возвращает Result: преобразование доменной ошибки в ответ приложения/API
 нужно реализовать на границе обработки запроса.
+

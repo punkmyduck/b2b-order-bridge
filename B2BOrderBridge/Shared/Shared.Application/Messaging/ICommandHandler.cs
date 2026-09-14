@@ -2,10 +2,11 @@ using Shared.Application.Results;
 
 namespace Shared.Application.Messaging;
 
-public interface ICommandHandler<TCommand> : Mediator.ICommandHandler<TCommand, Result>
+public interface ICommandHandler<TCommand> : MediatR.IRequestHandler<TCommand, Result>
     where TCommand : ICommand;
 
 public interface ICommandHandler<TCommand, TResponse>
-    : Mediator.ICommandHandler<TCommand, Result<TResponse>>
+    : MediatR.IRequestHandler<TCommand, Result<TResponse>>
     where TCommand : ICommand<TResponse>;
+
 
