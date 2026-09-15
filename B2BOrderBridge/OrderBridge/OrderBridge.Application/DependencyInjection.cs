@@ -27,6 +27,8 @@ public static class DependencyInjection
 
         services.AddScoped<IOrderIntegrationPlanner, OrderIntegrationPlanner>();
 
+        services.AddScoped<OrderIntegrationResolver>();
+
         return services;
     }
 }

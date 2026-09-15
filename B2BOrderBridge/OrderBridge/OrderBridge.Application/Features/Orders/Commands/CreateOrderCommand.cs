@@ -1,4 +1,4 @@
-using OrderBridge.Application.Features.OrderIntegrations.Services;
+using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.Features.Orders.ValueObjects;
 using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.Models;

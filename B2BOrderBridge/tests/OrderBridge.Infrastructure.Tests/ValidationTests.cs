@@ -2,7 +2,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using OrderBridge.Application;
-using OrderBridge.Application.Features.OrderIntegrations.Services;
+using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.Features.Orders.Commands;
 using OrderBridge.Application.Features.Orders.Queries;
 using OrderBridge.Application.Features.Orders.ValueObjects;
