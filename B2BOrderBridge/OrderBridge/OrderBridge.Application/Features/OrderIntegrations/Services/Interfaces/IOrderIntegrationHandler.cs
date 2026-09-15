@@ -2,7 +2,7 @@
 using OrderBridge.Domain.Models;
 using OrderBridge.Domain.ValueObjects;
 
-namespace OrderBridge.Application.Features.OrderIntegrations.Services;
+namespace OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 
 public interface IOrderIntegrationHandler
 {

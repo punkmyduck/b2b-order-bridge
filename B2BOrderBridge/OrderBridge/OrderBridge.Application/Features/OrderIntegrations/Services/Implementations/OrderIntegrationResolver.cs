@@ -1,6 +1,7 @@
-﻿using OrderBridge.Domain.ValueObjects;
+﻿using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
+using OrderBridge.Domain.ValueObjects;
 
-namespace OrderBridge.Application.Features.OrderIntegrations.Services;
+namespace OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 
 public class OrderIntegrationResolver : IOrderIntegrationResolver
 {
