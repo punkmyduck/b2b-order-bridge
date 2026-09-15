@@ -1,8 +1,7 @@
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using OrderBridge.Application.Services.Implementations;
-using OrderBridge.Application.Services.Interfaces;
+using OrderBridge.Application.Features.OrderIntegrations.Services;
 using Shared.Application.Behaviors;
 
 namespace OrderBridge.Application;

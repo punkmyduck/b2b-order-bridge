@@ -1,7 +1,7 @@
 ﻿using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.Models;
 
-namespace OrderBridge.Application.Services.Interfaces;
+namespace OrderBridge.Application.Features.OrderIntegrations.Services;
 
 public interface IOrderIntegrationPlanner
 {
