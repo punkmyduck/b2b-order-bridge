@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.Features.Orders.Repositories;
+using OrderBridge.Infrastructure.BackgroundJobs;
 using OrderBridge.Infrastructure.Persistence;
 using OrderBridge.Infrastructure.Services;
 using Shared.Application.Persistence;
@@ -16,6 +18,8 @@ public static class DependencyInjection
     public static IServiceCollection AddServices(this IServiceCollection services)
     {
         services.AddSingleton<IDateTimeOffsetProvider, DateTimeOffsetProvider>();
+        services.AddScoped<IIntegrationJobStore, IntegrationJobStore>();
+        services.AddHostedService<IntegrationWorker>();
         return services;
     }
 
