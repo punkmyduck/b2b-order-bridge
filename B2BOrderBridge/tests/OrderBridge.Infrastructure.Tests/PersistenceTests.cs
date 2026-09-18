@@ -1,5 +1,5 @@
 using OrderBridge.Application.ValueObjects;
-using OrderBridge.Application.Services.Implementations;
+using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;

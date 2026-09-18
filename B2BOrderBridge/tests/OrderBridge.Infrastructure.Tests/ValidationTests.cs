@@ -2,6 +2,8 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using OrderBridge.Application;
+using OrderBridge.Application.Features.OrderIntegrations.Commands;
+using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.Features.Orders.Commands;
 using OrderBridge.Application.Features.Orders.Queries;
@@ -34,6 +36,10 @@ public sealed class ValidationTests
             descriptor.ServiceType == typeof(IRequestHandler<GetOrderByIdQuery, Result<OrderSummaryDto>>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IValidator<GetOrderByIdQuery>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRequestHandler<ProcessOrderIntegrationCommand, Result>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IValidator<ProcessOrderIntegrationCommand>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IPipelineBehavior<,>) &&
             descriptor.ImplementationType == typeof(ValidationBehaviour<,>));
@@ -102,5 +108,29 @@ public sealed class ValidationTests
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => behaviour.Handle("x", _ => Task.FromResult(1), cts.Token));
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(BaseOrderIntegrationRetryPolicy.MaxAttemptsCount - 1, true)]
+    [InlineData(BaseOrderIntegrationRetryPolicy.MaxAttemptsCount, false)]
+    public void Retry_policy_stops_at_the_maximum_attempt_count(int attemptCount, bool expected)
+    {
+        var policy = new BaseOrderIntegrationRetryPolicy();
+
+        Assert.Equal(expected, policy.CanRetry(attemptCount));
+    }
+
+    [Fact]
+    public void Retry_policy_respects_a_longer_retry_after_delay()
+    {
+        var policy = new BaseOrderIntegrationRetryPolicy();
+        var now = new DateTimeOffset(2026, 9, 15, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.Equal(
+            now.AddMinutes(2),
+            policy.GetNextAttemptAt(1, now, TimeSpan.FromMinutes(2)));
+        Assert.Throws<InvalidOperationException>(() =>
+            policy.GetNextAttemptAt(BaseOrderIntegrationRetryPolicy.MaxAttemptsCount, now, null));
     }
 }
