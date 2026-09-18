@@ -2,6 +2,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
+using OrderBridge.Application.Features.OrderIntegrations.Services.IntegrationHandlers;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using Shared.Application.Behaviors;
 
@@ -27,8 +28,10 @@ public static class DependencyInjection
             lifetime: ServiceLifetime.Transient);
 
         services.AddScoped<IOrderIntegrationPlanner, OrderIntegrationPlanner>();
+        services.AddSingleton<IOrderIntegrationRetryPolicy, BaseOrderIntegrationRetryPolicy>();
+        services.AddScoped<IOrderIntegrationResolver, OrderIntegrationResolver>();
 
-        services.AddScoped<OrderIntegrationResolver>();
+        services.AddScoped<IOrderIntegrationHandler, TelegramNotificationIntegrationMockHandler>();
 
         return services;
     }
