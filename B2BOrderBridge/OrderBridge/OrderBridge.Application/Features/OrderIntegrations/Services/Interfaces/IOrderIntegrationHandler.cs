@@ -1,5 +1,5 @@
-﻿using OrderBridge.Application.ValueObjects;
-using OrderBridge.Domain.Models;
+using OrderBridge.Application.Features.OrderIntegrations.ValueObjects;
+using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.ValueObjects;
 
 namespace OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
@@ -10,7 +10,6 @@ public interface IOrderIntegrationHandler
     IntegrationOperation IntegrationOperation { get; }
 
     Task<IntegrationExecutionResult> ExecuteAsync(
-        Order order,
-        string idempotencyKey,
+        IntegrationExecutionContext executionContext,
         CancellationToken cancellationToken);
 }
