@@ -10,6 +10,7 @@ using OrderBridge.Application.Features.Orders.Queries;
 using OrderBridge.Application.Features.Orders.ValueObjects;
 using OrderBridge.Application.ValueObjects;
 using Shared.Application.Behaviors;
+using Shared.Application.Pagination;
 using Shared.Application.Results;
 using Xunit;
 
@@ -36,6 +37,11 @@ public sealed class ValidationTests
             descriptor.ServiceType == typeof(IRequestHandler<GetOrderByIdQuery, Result<OrderSummaryDto>>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IValidator<GetOrderByIdQuery>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRequestHandler<GetPagedOrdersQuery,
+                Result<PaginationResult<OrderSummaryDto>>>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IValidator<GetPagedOrdersQuery>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IRequestHandler<ProcessOrderIntegrationCommand, Result>));
         Assert.Contains(services, descriptor =>
@@ -80,6 +86,23 @@ public sealed class ValidationTests
     {
         var command = Valid() with { Lines = [new OrderLineDto("SKU", "Item", decimal.MaxValue, 2m)] };
         Assert.False((await new CreateOrderCommandValidator().ValidateAsync(command)).IsValid);
+    }
+
+    [Fact]
+    public async Task Paged_orders_query_rejects_invalid_filter_ranges()
+    {
+        var query = new GetPagedOrdersQuery(
+            new PaginationRequest(),
+            new OrdersFilter(
+                TotalAmountFrom: 100m,
+                TotalAmountTo: 10m,
+                CreatedAtFrom: DateTimeOffset.UtcNow,
+                CreatedAtTo: DateTimeOffset.UtcNow.AddDays(-1)));
+
+        var result = await new GetPagedOrdersQueryValidator().ValidateAsync(query);
+
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("TotalAmountFrom"));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("CreatedAtFrom"));
     }
 
     [Fact]

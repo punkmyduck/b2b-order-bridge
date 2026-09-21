@@ -1,4 +1,3 @@
-using OrderBridge.Application.ValueObjects;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,11 +5,14 @@ using Npgsql;
 using OrderBridge.Application.Features.Orders.Commands;
 using OrderBridge.Application.Features.Orders.Queries;
 using OrderBridge.Application.Features.Orders.Repositories;
+using OrderBridge.Application.Features.Orders.ValueObjects;
+using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.Models;
 using OrderBridge.Domain.ValueObjects;
 using OrderBridge.Infrastructure;
 using OrderBridge.Infrastructure.Persistence;
 using Shared.Application.Persistence;
+using Shared.Application.Pagination;
 using Shared.Application.Services;
 using Shared.Application.Results;
 using Testcontainers.PostgreSql;
@@ -41,10 +43,13 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
 public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<DatabaseFixture>
 {
-    private static Order Create(string? externalId = null) => Order.CreateOrder(
-        Guid.NewGuid(), "portal", externalId ?? Guid.NewGuid().ToString(),
+    private static Order Create(
+        string? externalId = null,
+        string sourceSystem = "portal",
+        DateTimeOffset? createdAt = null) => Order.CreateOrder(
+        Guid.NewGuid(), sourceSystem, externalId ?? Guid.NewGuid().ToString(),
         new CustomerSnapshot("ACME", "123", "test@example.com"), "RUB",
-        new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.FromHours(3)),
+        createdAt ?? new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.FromHours(3)),
         [new OrderLine(Guid.NewGuid(), "SKU", "Item", 0.333m, 0.10m)]);
 
     [Fact]
@@ -160,6 +165,54 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         Assert.True(missing.IsFailure);
         Assert.Equal(ErrorType.NotFound, missing.Error!.Type);
         Assert.Equal("Order.NotFound", missing.Error.Code);
+    }
+
+    [Fact]
+    public async Task Get_paged_returns_stably_sorted_page_and_total_count()
+    {
+        var sourceSystem = $"paged-{Guid.NewGuid():N}";
+        using (var writeScope = fixture.Services.CreateScope())
+        {
+            var writeRepository = writeScope.ServiceProvider.GetRequiredService<IRepository<Order, Guid>>();
+            writeRepository.Add(Create("order-c", sourceSystem));
+            writeRepository.Add(Create("order-a", sourceSystem));
+            writeRepository.Add(Create("order-b", sourceSystem));
+            await writeScope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+
+        using var readScope = fixture.Services.CreateScope();
+        var readRepository = readScope.ServiceProvider.GetRequiredService<IOrderReadRepository>();
+
+        var page = await readRepository.GetPagedAsync(
+            new PaginationRequest(pageNumber: 1, pageSize: 2),
+            new OrdersFilter(SourceSystem: sourceSystem),
+            OrdersSortBy.ExternalOrderId,
+            SortDirection.Ascending);
+
+        Assert.Equal(3, page.TotalCount);
+        Assert.Equal(2, page.TotalPages);
+        Assert.True(page.HasNextPage);
+        Assert.Equal(["order-a", "order-b"], page.Items.Select(order => order.ExternalOrderId));
+        Assert.Empty(readScope.ServiceProvider.GetRequiredService<OrderBridgeDbContext>().ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task Get_paged_returns_successful_empty_page_when_nothing_matches()
+    {
+        using var scope = fixture.Services.CreateScope();
+        var handler = new GetPagedOrdersQueryHandler(
+            scope.ServiceProvider.GetRequiredService<IOrderReadRepository>());
+
+        var result = await handler.Handle(
+            new GetPagedOrdersQuery(
+                new PaginationRequest(),
+                new OrdersFilter(SourceSystem: $"missing-{Guid.NewGuid():N}")),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+        Assert.Equal(0, result.Value.TotalPages);
     }
 }
 
