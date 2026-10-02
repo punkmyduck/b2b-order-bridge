@@ -48,6 +48,21 @@ public sealed class OrderController(ISender sender) : BaseApiController
         return FromResult(result);
     }
 
+    [HttpGet("{id:guid}/details")]
+    [ProducesResponseType(typeof(OrderDetailsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OrderDetailsDto>> GetDetailsByIdAsync(
+        [FromRoute] Guid id,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new GetOrderDetailsByIdQuery(id),
+            cancellationToken);
+
+        return FromResult(result);
+    }
+
     [HttpGet]
     [ProducesResponseType(typeof(PaginationResult<OrderSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

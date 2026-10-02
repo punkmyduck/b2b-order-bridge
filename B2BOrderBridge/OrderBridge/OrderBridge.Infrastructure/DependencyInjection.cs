@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
+using OrderBridge.Application.Features.OrderIntegrations.Repositories;
 using OrderBridge.Application.Features.Orders.Repositories;
 using OrderBridge.Infrastructure.BackgroundJobs;
 using OrderBridge.Infrastructure.Persistence;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped(typeof(IRepository<,>), typeof(EfRepository<,>));
         services.AddScoped(typeof(IReadRepository<,>), typeof(EfRepository<,>));
         services.AddScoped<IOrderReadRepository, OrderReadRepository>();
+        services.AddScoped<IOrderIntegrationReadRepository, OrderIntegrationReadRepository>();
         return services;
     }
 

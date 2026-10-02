@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using OrderBridge.Application.Features.OrderIntegrations.ValueObjects;
 using OrderBridge.Application.Features.Orders.Repositories;
 using OrderBridge.Application.Features.Orders.ValueObjects;
 using OrderBridge.Application.ValueObjects;
@@ -61,6 +62,70 @@ public sealed class OrderReadRepository(OrderBridgeDbContext context)
             .Where(order => order.Id == id)
             .Select(SummaryProjection)
             .SingleOrDefaultAsync(cancellationToken);
+
+    public async Task<OrderDetailsDto?> GetDetailsByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await Context.Orders
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(order => order.Id == id)
+            .Select(order => new OrderDetailsDto(
+                order.Id,
+                order.SourceSystem,
+                order.ExternalOrderId,
+                new CustomerSnapshotDto(
+                    order.Customer.CompanyName,
+                    order.Customer.TaxId,
+                    order.Customer.ContactEmail),
+                order.OrderStatus,
+                order.PaymentStatus,
+                order.TotalAmount,
+                order.Currency,
+                order.CreatedAt,
+                order.UpdatedAt,
+                order.Lines
+                    .OrderBy(line => line.Id)
+                    .Select(line => new OrderLineDetailsDto(
+                        line.Id,
+                        line.Sku,
+                        line.Name,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.LineTotal))
+                    .ToList(),
+                Array.Empty<OrderIntegrationDto>()))
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (order is null)
+            return null;
+
+        var integrations = await Context.OrderIntegrations
+            .AsNoTracking()
+            .Where(integration => integration.OrderId == id)
+            .OrderBy(integration => integration.CreatedAt)
+            .ThenBy(integration => integration.Id)
+            .Select(integration => new OrderIntegrationDto(
+                integration.Id,
+                integration.OrderId,
+                integration.IntegrationTarget,
+                integration.IntegrationOperation,
+                integration.IntegrationStatus,
+                integration.ExternalEntityId,
+                integration.IdempotencyKey,
+                integration.AttemptCount,
+                integration.NextAttemptAt,
+                integration.LastErrorCode,
+                integration.LastErrorMessage,
+                integration.CreatedAt,
+                integration.LastAttemptAt,
+                integration.CompletedAt,
+                integration.UpdatedAt))
+            .ToListAsync(cancellationToken);
+
+        return order with { Integrations = integrations };
+    }
 
     private static IQueryable<Order> ApplyFilters(
         IQueryable<Order> query,

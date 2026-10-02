@@ -3,8 +3,10 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using OrderBridge.Application;
 using OrderBridge.Application.Features.OrderIntegrations.Commands;
+using OrderBridge.Application.Features.OrderIntegrations.Queries;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
+using OrderBridge.Application.Features.OrderIntegrations.ValueObjects;
 using OrderBridge.Application.Features.Orders.Commands;
 using OrderBridge.Application.Features.Orders.Queries;
 using OrderBridge.Application.Features.Orders.ValueObjects;
@@ -42,6 +44,16 @@ public sealed class ValidationTests
                 Result<PaginationResult<OrderSummaryDto>>>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IValidator<GetPagedOrdersQuery>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRequestHandler<GetOrderDetailsByIdQuery,
+                Result<OrderDetailsDto>>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IValidator<GetOrderDetailsByIdQuery>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRequestHandler<GetPagedOrderIntegrationsQuery,
+                Result<PaginationResult<OrderIntegrationDto>>>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IValidator<GetPagedOrderIntegrationsQuery>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IRequestHandler<ProcessOrderIntegrationCommand, Result>));
         Assert.Contains(services, descriptor =>

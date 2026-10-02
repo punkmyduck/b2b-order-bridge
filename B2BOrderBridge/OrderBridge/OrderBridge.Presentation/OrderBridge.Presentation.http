@@ -28,3 +28,13 @@ GET {{OrderBridge.Presentation_HostAddress}}/api/orders/00000000-0000-0000-0000-
 Accept: application/json
 
 ###
+
+GET {{OrderBridge.Presentation_HostAddress}}/api/orders/00000000-0000-0000-0000-000000000000/details
+Accept: application/json
+
+###
+
+GET {{OrderBridge.Presentation_HostAddress}}/api/order-integrations?pageNumber=1&pageSize=20&sortBy=CreatedAt&sortDirection=Descending
+Accept: application/json
+
+###

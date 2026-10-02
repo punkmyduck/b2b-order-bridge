@@ -12,6 +12,10 @@ public interface IOrderReadRepository : IReadRepository<Order, Guid>
         Guid id,
         CancellationToken cancellationToken = default);
 
+    Task<OrderDetailsDto?> GetDetailsByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default);
+
     Task<PaginationResult<OrderSummaryDto>> GetPagedAsync(
         PaginationRequest paginationRequest,
         OrdersFilter? filter = null,

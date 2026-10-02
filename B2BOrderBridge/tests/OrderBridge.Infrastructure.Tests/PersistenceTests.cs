@@ -1,4 +1,6 @@
 using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
+using OrderBridge.Application.Features.OrderIntegrations.Repositories;
+using OrderBridge.Application.Features.OrderIntegrations.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -23,12 +25,17 @@ namespace OrderBridge.Infrastructure.Tests;
 public sealed class DatabaseFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _database = new PostgreSqlBuilder("postgres:17-alpine").Build();
-    public ServiceProvider Services { get; private set; } = null!;
+    private ServiceProvider? _services;
+    public ServiceProvider Services => _services
+        ?? throw new InvalidOperationException("The database fixture has not been initialized.");
 
     public async Task InitializeAsync()
     {
         await _database.StartAsync();
-        Services = new ServiceCollection().AddServices().AddPersistence(_database.GetConnectionString())
+        _services = new ServiceCollection()
+            .AddLogging()
+            .AddServices()
+            .AddPersistence(_database.GetConnectionString())
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         using var scope = Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<OrderBridgeDbContext>().Database.MigrateAsync();
@@ -36,7 +43,8 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await Services.DisposeAsync();
+        if (_services is not null)
+            await _services.DisposeAsync();
         await _database.DisposeAsync();
     }
 }
@@ -213,6 +221,81 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         Assert.Empty(result.Value.Items);
         Assert.Equal(0, result.Value.TotalCount);
         Assert.Equal(0, result.Value.TotalPages);
+    }
+
+    [Fact]
+    public async Task Get_details_returns_lines_and_integrations_without_tracking()
+    {
+        var order = Create();
+        var createdAt = DateTimeOffset.UtcNow;
+        var integration = OrderIntegration.Create(
+            Guid.NewGuid(),
+            order,
+            IntegrationTarget.OneC,
+            IntegrationOperation.CreateSalesOrder,
+            Guid.NewGuid().ToString("N"),
+            createdAt,
+            isWaitingForPrerequisite: false);
+
+        using (var writeScope = fixture.Services.CreateScope())
+        {
+            var dbContext = writeScope.ServiceProvider.GetRequiredService<OrderBridgeDbContext>();
+            dbContext.AddRange(order, integration);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var readScope = fixture.Services.CreateScope();
+        var handler = new GetOrderDetailsByIdQueryHandler(
+            readScope.ServiceProvider.GetRequiredService<IOrderReadRepository>());
+
+        var result = await handler.Handle(
+            new GetOrderDetailsByIdQuery(order.Id),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value.Lines);
+        Assert.Equal(order.TotalAmount, result.Value.Lines.Single().LineTotal);
+        Assert.Equal(integration.Id, Assert.Single(result.Value.Integrations).Id);
+        Assert.Empty(readScope.ServiceProvider
+            .GetRequiredService<OrderBridgeDbContext>().ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task Get_paged_integrations_filters_by_order_and_reports_total_count()
+    {
+        var order = Create();
+        var createdAt = DateTimeOffset.UtcNow;
+        var first = OrderIntegration.Create(
+            Guid.NewGuid(), order, IntegrationTarget.OneC,
+            IntegrationOperation.CreateSalesOrder, Guid.NewGuid().ToString("N"),
+            createdAt, isWaitingForPrerequisite: false);
+        var second = OrderIntegration.Create(
+            Guid.NewGuid(), order, IntegrationTarget.Diadoc,
+            IntegrationOperation.CreateDocument, Guid.NewGuid().ToString("N"),
+            createdAt, isWaitingForPrerequisite: true);
+
+        using (var writeScope = fixture.Services.CreateScope())
+        {
+            var dbContext = writeScope.ServiceProvider.GetRequiredService<OrderBridgeDbContext>();
+            dbContext.AddRange(order, first, second);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var readScope = fixture.Services.CreateScope();
+        var repository = readScope.ServiceProvider
+            .GetRequiredService<IOrderIntegrationReadRepository>();
+
+        var page = await repository.GetPagedAsync(
+            new PaginationRequest(pageNumber: 1, pageSize: 1),
+            new OrderIntegrationsFilter(OrderId: order.Id),
+            OrderIntegrationsSortBy.CreatedAt,
+            SortDirection.Ascending);
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(2, page.TotalPages);
+        Assert.Single(page.Items);
+        Assert.Equal(order.Id, page.Items[0].OrderId);
+        Assert.True(page.HasNextPage);
     }
 }
 
