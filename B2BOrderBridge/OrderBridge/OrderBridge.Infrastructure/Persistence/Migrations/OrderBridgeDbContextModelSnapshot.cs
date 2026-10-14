@@ -22,6 +22,60 @@ namespace OrderBridge.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("OrderBridge.Application.Features.OrderIntegrations.Models.IntegrationAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<Guid>("OrderIntegrationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("ResponseStatusCode")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderIntegrationId", "AttemptNumber")
+                        .IsUnique();
+
+                    b.HasIndex("OrderIntegrationId", "StartedAt");
+
+                    b.HasIndex("Outcome", "StartedAt");
+
+                    b.ToTable("IntegrationAttempts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_IntegrationAttempts_AttemptNumber_Positive", "\"AttemptNumber\" > 0");
+
+                            t.HasCheckConstraint("CK_IntegrationAttempts_ResponseStatusCode_Range", "\"ResponseStatusCode\" IS NULL OR \"ResponseStatusCode\" BETWEEN 100 AND 599");
+                        });
+                });
+
             modelBuilder.Entity("OrderBridge.Domain.Models.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -187,6 +241,15 @@ namespace OrderBridge.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("OrderLines", (string)null);
+                });
+
+            modelBuilder.Entity("OrderBridge.Application.Features.OrderIntegrations.Models.IntegrationAttempt", b =>
+                {
+                    b.HasOne("OrderBridge.Domain.Models.OrderIntegration", null)
+                        .WithMany()
+                        .HasForeignKey("OrderIntegrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OrderBridge.Domain.Models.Order", b =>

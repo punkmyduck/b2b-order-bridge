@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,10 +15,12 @@ public sealed class IntegrationWorker(
     IDateTimeOffsetProvider dateTimeOffsetProvider,
     ILogger<IntegrationWorker> logger) : BackgroundService
 {
+    public const string ActivitySourceName = "OrderBridge.Integrations";
     public const int BatchSize = 50;
     public const int MaxDegreeOfParallelism = 8;
 
     private static readonly TimeSpan Period = TimeSpan.FromSeconds(10);
+    private static readonly ActivitySource ActivitySource = new(ActivitySourceName);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -85,6 +88,14 @@ public sealed class IntegrationWorker(
         Guid integrationId,
         CancellationToken cancellationToken)
     {
+        using var activity = ActivitySource.StartActivity(
+                                 "ProcessOrderIntegration",
+                                 ActivityKind.Internal)
+                             ?? new Activity("ProcessOrderIntegration")
+                                 .SetIdFormat(ActivityIdFormat.W3C)
+                                 .Start();
+        activity.SetTag("order.integration.id", integrationId);
+
         await using var scope = scopeFactory.CreateAsyncScope();
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
 

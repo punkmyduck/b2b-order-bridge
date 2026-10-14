@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using OrderBridge.Application.Features.OrderIntegrations.Models;
+using OrderBridge.Application.Features.OrderIntegrations.Repositories;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.Features.OrderIntegrations.ValueObjects;
 using OrderBridge.Application.ValueObjects;
@@ -7,6 +9,7 @@ using Shared.Application.Messaging;
 using Shared.Application.Persistence;
 using Shared.Application.Results;
 using Shared.Application.Services;
+using System.Diagnostics;
 
 namespace OrderBridge.Application.Features.OrderIntegrations.Commands;
 
@@ -16,6 +19,7 @@ public sealed class ProcessOrderIntegrationCommandHandler(
     IDateTimeOffsetProvider dateTimeOffsetProvider,
     IRepository<OrderIntegration, Guid> integrationRepository,
     IRepository<Order, Guid> orderRepository,
+    IIntegrationAttemptRepository integrationAttemptRepository,
     IUnitOfWork unitOfWork,
     IOrderIntegrationResolver resolver,
     IOrderIntegrationRetryPolicy retryPolicy,
@@ -77,16 +81,51 @@ public sealed class ProcessOrderIntegrationCommandHandler(
             OrderExecutionSnapshot.FromDomain(order));
 
         integration.StartAttempt(startedAt);
+
+        var integrationAttempt = IntegrationAttempt.Start(integration, startedAt, Activity.Current?.TraceId.ToString());
+        integrationAttemptRepository.Add(integrationAttempt);
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var executionResult = await ExecuteAsync(
-            handler,
-            executionContext,
-            integration.Id,
-            cancellationToken);
+        IntegrationExecutionResult executionResult;
+        try
+        {
+            executionResult = await ExecuteAsync(
+                handler,
+                executionContext,
+                integration.Id,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            var cancelledAt = dateTimeOffsetProvider.UtcNow;
+            var cancelledResult = new IntegrationExecutionResult.IntegrationTransientFailure(
+                "integration.cancelled",
+                "The integration attempt was cancelled before it completed.",
+                null,
+                null);
+
+            try
+            {
+                ApplyExecutionResult(integration, cancelledResult, cancelledAt);
+                integrationAttempt.Complete(cancelledResult, cancelledAt);
+                await unitOfWork.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Failed to persist cancellation of integration attempt {AttemptId}.",
+                    integrationAttempt.Id);
+            }
+
+            throw;
+        }
 
         var completedAt = dateTimeOffsetProvider.UtcNow;
         ApplyExecutionResult(integration, executionResult, completedAt);
+        integrationAttempt.Complete(executionResult, completedAt);
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
