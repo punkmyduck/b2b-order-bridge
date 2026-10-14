@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Shared.Application.Persistence;
 using Shared.Domain;
 
-namespace OrderBridge.Infrastructure.Persistence;
+namespace OrderBridge.Infrastructure.Persistence.Repositories;
 
 /// <summary>Tracks aggregates in the scoped context. Save through IUnitOfWork.</summary>
 public class EfRepository<TEntity, TId>(OrderBridgeDbContext context) : IRepository<TEntity, TId>

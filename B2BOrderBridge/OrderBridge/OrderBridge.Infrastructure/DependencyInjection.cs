@@ -9,6 +9,7 @@ using OrderBridge.Infrastructure.Persistence;
 using OrderBridge.Infrastructure.Services;
 using Shared.Application.Persistence;
 using Shared.Application.Services;
+using OrderBridge.Infrastructure.Persistence.Repositories;
 
 namespace OrderBridge.Infrastructure;
 
@@ -33,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped(typeof(IReadRepository<,>), typeof(EfRepository<,>));
         services.AddScoped<IOrderReadRepository, OrderReadRepository>();
         services.AddScoped<IOrderIntegrationReadRepository, OrderIntegrationReadRepository>();
+        services.AddScoped<IIntegrationAttemptRepository, IntegrationAttemptRepository>();
         return services;
     }
 

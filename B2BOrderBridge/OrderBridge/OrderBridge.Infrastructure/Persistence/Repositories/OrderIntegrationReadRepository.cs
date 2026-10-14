@@ -6,7 +6,7 @@ using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.Models;
 using Shared.Application.Pagination;
 
-namespace OrderBridge.Infrastructure.Persistence;
+namespace OrderBridge.Infrastructure.Persistence.Repositories;
 
 public sealed class OrderIntegrationReadRepository(OrderBridgeDbContext context)
     : IOrderIntegrationReadRepository
