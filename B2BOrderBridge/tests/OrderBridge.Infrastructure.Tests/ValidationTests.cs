@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using OrderBridge.Application;
 using OrderBridge.Application.Features.OrderIntegrations.Commands;
+using OrderBridge.Application.Features.OrderIntegrations.Models;
 using OrderBridge.Application.Features.OrderIntegrations.Queries;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
@@ -54,6 +55,16 @@ public sealed class ValidationTests
                 Result<PaginationResult<OrderIntegrationDto>>>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IValidator<GetPagedOrderIntegrationsQuery>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRequestHandler<GetPagedIntegrationAttemptsQuery,
+                Result<PaginationResult<IntegrationAttempt>>>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IValidator<GetPagedIntegrationAttemptsQuery>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRequestHandler<GetIntegrationAttemptByIdQuery,
+                Result<IntegrationAttempt>>));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IValidator<GetIntegrationAttemptByIdQuery>));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IRequestHandler<ProcessOrderIntegrationCommand, Result>));
         Assert.Contains(services, descriptor =>

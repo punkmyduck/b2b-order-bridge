@@ -1,5 +1,6 @@
 using OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 using OrderBridge.Application.Features.OrderIntegrations.Repositories;
+using OrderBridge.Application.Features.OrderIntegrations.Models;
 using OrderBridge.Application.Features.OrderIntegrations.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -296,6 +297,95 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         Assert.Single(page.Items);
         Assert.Equal(order.Id, page.Items[0].OrderId);
         Assert.True(page.HasNextPage);
+    }
+
+    [Fact]
+    public async Task Integration_attempt_repository_persists_tracks_and_filters_attempts()
+    {
+        var order = Create();
+        var integration = OrderIntegration.Create(
+            Guid.NewGuid(), order, IntegrationTarget.Telegram,
+            IntegrationOperation.SendOrderReceivedNotification,
+            Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow,
+            isWaitingForPrerequisite: false);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        integration.StartAttempt(startedAt);
+        var attempt = IntegrationAttempt.Start(
+            integration,
+            startedAt,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1");
+        attempt.Complete(
+            new IntegrationExecutionResult.IntegrationTransientFailure(
+                "telegram.temporarily_unavailable",
+                "Telegram is temporarily unavailable.",
+                503,
+                TimeSpan.FromMinutes(1)),
+            startedAt.AddSeconds(1));
+
+        var secondIntegration = OrderIntegration.Create(
+            Guid.NewGuid(), order, IntegrationTarget.OneC,
+            IntegrationOperation.CreateSalesOrder,
+            Guid.NewGuid().ToString("N"), startedAt,
+            isWaitingForPrerequisite: false);
+        secondIntegration.StartAttempt(startedAt.AddMilliseconds(1));
+        var secondAttempt = IntegrationAttempt.Start(
+            secondIntegration,
+            startedAt.AddMilliseconds(1),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2");
+        secondAttempt.Complete(
+            new IntegrationExecutionResult.IntegrationSucceeded("1C-42", 200),
+            startedAt.AddSeconds(2));
+
+        using (var writeScope = fixture.Services.CreateScope())
+        {
+            var services = writeScope.ServiceProvider;
+            services.GetRequiredService<IRepository<Order, Guid>>().Add(order);
+            services.GetRequiredService<IRepository<OrderIntegration, Guid>>().Add(integration);
+            services.GetRequiredService<IRepository<OrderIntegration, Guid>>().Add(secondIntegration);
+            services.GetRequiredService<IIntegrationAttemptRepository>().Add(attempt);
+            services.GetRequiredService<IIntegrationAttemptRepository>().Add(secondAttempt);
+            await services.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+
+        using (var trackedScope = fixture.Services.CreateScope())
+        {
+            var repository = trackedScope.ServiceProvider
+                .GetRequiredService<IIntegrationAttemptRepository>();
+            var loaded = await repository.GetByIdAsync(attempt.Id);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(503, loaded.ResponseStatusCode);
+            Assert.Equal(IntegrationAttemptOutcome.Failed, loaded.Outcome);
+            Assert.Contains(
+                trackedScope.ServiceProvider.GetRequiredService<OrderBridgeDbContext>()
+                    .ChangeTracker.Entries<IntegrationAttempt>(),
+                entry => entry.Entity.Id == attempt.Id);
+        }
+
+        using var readScope = fixture.Services.CreateScope();
+        var readRepository = readScope.ServiceProvider
+            .GetRequiredService<IIntegrationAttemptRepository>();
+        var page = await readRepository.GetPagedAsync(
+            new PaginationRequest(pageNumber: 1, pageSize: 1),
+            new IntegrationAttemptFilter(
+                OrderIntegrationId: integration.Id,
+                Outcome: IntegrationAttemptOutcome.Failed,
+                ErrorCodeSearchTerm: "temporarily",
+                SearchTerm: "503"));
+
+        Assert.Equal(1, page.TotalCount);
+        Assert.Equal(attempt.Id, Assert.Single(page.Items).Id);
+
+        var sortedPage = await readRepository.GetPagedAsync(
+            new PaginationRequest(pageNumber: 1, pageSize: 2),
+            new IntegrationAttemptFilter(TraceIdSearchTerm: "aaaaaaaa"),
+            IntegrationAttemptSortBy.ResponseStatusCode,
+            SortDirection.Ascending);
+
+        Assert.Equal([200, 503], sortedPage.Items.Select(item => item.ResponseStatusCode));
+        Assert.Empty(readScope.ServiceProvider.GetRequiredService<OrderBridgeDbContext>()
+            .ChangeTracker.Entries());
     }
 }
 
