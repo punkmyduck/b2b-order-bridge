@@ -1,0 +1,16 @@
+@HostAddress = http://localhost:8089
+
+GET {{HostAddress}}/api/order-integrations?pageNumber=1&pageSize=20&sortBy=CreatedAt&sortDirection=Descending
+Accept: application/json
+
+###
+
+GET {{HostAddress}}/api/order-integrations/attempts?pageNumber=1&pageSize=20&sortBy=StartedAt&sortDirection=Descending
+Accept: application/json
+
+###
+
+GET {{HostAddress}}/api/order-integrations/attempts/00000000-0000-0000-0000-000000000000
+Accept: application/json
+
+###

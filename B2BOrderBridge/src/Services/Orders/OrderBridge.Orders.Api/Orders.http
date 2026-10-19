@@ -1,0 +1,36 @@
+@OrderBridge.Orders.Api_HostAddress = http://localhost:8088
+
+POST {{OrderBridge.Orders.Api_HostAddress}}/api/orders
+Content-Type: application/json
+
+{
+  "sourceSystem": "marketplace",
+  "externalOrderId": "ORDER-421",
+  "customer": {
+    "companyName": "ACME LLC",
+    "taxId": "7701234567",
+    "contactEmail": "orders@example.com"
+  },
+  "currency": "RUB",
+  "lines": [
+    {
+      "sku": "SKU-001",
+      "name": "Integration service",
+      "quantity": 1,
+      "unitPrice": 15000
+    }
+  ]
+}
+
+###
+
+GET {{OrderBridge.Orders.Api_HostAddress}}/api/orders/00000000-0000-0000-0000-000000000000
+Accept: application/json
+
+###
+
+GET {{OrderBridge.Orders.Api_HostAddress}}/api/orders/00000000-0000-0000-0000-000000000000/details
+Accept: application/json
+
+###
+
