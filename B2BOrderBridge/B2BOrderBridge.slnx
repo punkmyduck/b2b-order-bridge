@@ -7,6 +7,7 @@
     <Project Path="OrderBridge/OrderBridge.Domain/OrderBridge.Domain.csproj" Id="892b28fc-7776-4d5f-a0c5-cb2d8fc3f9a9" />
     <Project Path="OrderBridge/OrderBridge.Infrastructure/OrderBridge.Infrastructure.csproj" Id="6955f1f2-c38d-4f58-9ab9-4b7416d65a67" />
     <Project Path="OrderBridge/OrderBridge.Presentation/OrderBridge.Presentation.csproj" Id="fedc6c3e-4c65-4366-8ee9-ae9e7cb6853f" />
+    <Project Path="OrderBridge/OrderBridge.Web/OrderBridge.Web.csproj" />
   </Folder>
   <Folder Name="/Shared/">
     <File Path="Shared/README.md" />
@@ -17,6 +18,7 @@
     <Project Path="tests/OrderBridge.Domain.Tests/OrderBridge.Domain.Tests.csproj" />
     <Project Path="tests/OrderBridge.Infrastructure.Tests/OrderBridge.Infrastructure.Tests.csproj" />
     <Project Path="tests/OrderBridge.Presentation.Tests/OrderBridge.Presentation.Tests.csproj" />
+    <Project Path="tests/OrderBridge.Web.Tests/OrderBridge.Web.Tests.csproj" />
     <Project Path="tests/Shared.Tests/Shared.Tests.csproj" />
   </Folder>
 </Solution>
