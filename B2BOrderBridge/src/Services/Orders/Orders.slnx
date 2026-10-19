@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="OrderBridge.Orders.Api/OrderBridge.Orders.Api.csproj" />
+  <Project Path="OrderBridge.Orders.Application/OrderBridge.Orders.Application.csproj" />
+  <Project Path="OrderBridge.Orders.Domain/OrderBridge.Orders.Domain.csproj" />
+  <Project Path="OrderBridge.Orders.Infrastructure/OrderBridge.Orders.Infrastructure.csproj" />
+</Solution>
