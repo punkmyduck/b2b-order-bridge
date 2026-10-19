@@ -1,9 +1,9 @@
-﻿using OrderBridge.Application.Services.Interfaces;
+﻿using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.Models;
 using OrderBridge.Domain.ValueObjects;
 
-namespace OrderBridge.Application.Services.Implementations;
+namespace OrderBridge.Application.Features.OrderIntegrations.Services.Implementations;
 
 public sealed class OrderIntegrationPlanner : IOrderIntegrationPlanner
 {

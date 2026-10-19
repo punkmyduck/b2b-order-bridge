@@ -1,0 +1,81 @@
+@page "/"
+@page "/orders"
+@inject OrderBridgeApiClient Api
+@implements IDisposable
+<PageTitle>Заказы · OrderBridge</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">ОПЕРАЦИИ</span><h1>Заказы <span class="count-pill">@(_page?.TotalCount.ToString() ?? "—")</span></h1><p>Все заказы и их путь во внешние системы.</p></div><a class="button primary" href="/orders/new"><Icon Name="plus" />Создать заказ</a></div>
+<ApiError Error="_error" />
+<section class="panel">
+    <div class="panel-toolbar">
+        <form class="search-form" @onsubmit="SearchAsync" @onsubmit:preventDefault>
+            <div class="search-input"><Icon Name="search" /><input aria-label="Поиск заказов" placeholder="Номер, компания или источник…" @bind="_search" maxlength="512" disabled="@_busy" /></div>
+            <button class="button secondary" disabled="@_busy" type="submit">Найти</button>
+        </form>
+        <div class="toolbar-actions">
+            <select aria-label="Сортировка заказов" @bind="_sort" @bind:after="SearchAsync" disabled="@_busy"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="amount">По сумме ↓</option><option value="customer">По компании</option></select>
+            <select aria-label="Заказов на странице" @bind="_pageSize" @bind:after="SearchAsync" disabled="@_busy"><option value="10">10 / стр.</option><option value="20">20 / стр.</option><option value="50">50 / стр.</option></select>
+            <button class="button icon-button secondary" disabled="@_busy" @onclick="LoadAsync" aria-label="Обновить заказы"><Icon Name="refresh" /></button>
+        </div>
+    </div>
+    @if (_busy)
+    {
+        <div class="empty-state" role="status"><span class="loader"></span><h2>Загружаем заказы</h2><p>Получаем актуальные данные.</p></div>
+    }
+    else if (_error is not null)
+    {
+        <div class="empty-state"><Icon Name="orders" /><h2>Не удалось загрузить заказы</h2><p>Повторите запрос после восстановления соединения.</p><button class="button secondary" @onclick="LoadAsync">Повторить</button></div>
+    }
+    else if (_page is null || _page.Items.Count == 0)
+    {
+        <div class="empty-state"><span class="empty-icon"><Icon Name="orders" /></span><h2>@(string.IsNullOrEmpty(_appliedSearch) ? "Пока нет заказов" : "Ничего не найдено")</h2><p>@(string.IsNullOrEmpty(_appliedSearch) ? "Создайте первый заказ, чтобы увидеть работу интеграций." : "Попробуйте другой номер, название компании или источник.")</p>
+            @if (string.IsNullOrEmpty(_appliedSearch)) { <a class="button primary" href="/orders/new"><Icon Name="plus" />Создать первый заказ</a> }
+            else { <button class="button secondary" @onclick="ResetSearchAsync">Сбросить поиск</button> }
+        </div>
+    }
+    else
+    {
+        <div class="table-scroll"><table><thead><tr><th>Заказ</th><th>Компания</th><th>Статус</th><th>Оплата</th><th class="align-right">Сумма</th><th>Создан</th><th></th></tr></thead><tbody>
+        @foreach (var order in _page.Items)
+        {
+            <tr @key="order.Id"><td><a class="order-link" href="@($"/orders/{order.Id}")">@order.ExternalOrderId</a><small>@order.SourceSystem</small></td><td><strong>@order.Customer.CompanyName</strong><small>ИНН @order.Customer.TaxId</small></td><td><StatusBadge Value="@order.OrderStatus" /></td><td><StatusBadge Value="@order.PaymentStatus" /></td><td class="align-right money">@Display.Money(order.TotalAmount, order.Currency)</td><td class="date-cell">@Display.Date(order.CreatedAt)</td><td><a class="row-open" href="@($"/orders/{order.Id}")" aria-label="@($"Открыть заказ {order.ExternalOrderId}")"><Icon Name="arrow" /></a></td></tr>
+        }
+        </tbody></table></div>
+    }
+    @if (_page is not null && _error is null)
+    {
+        <Pagination PageNumber="_page.PageNumber" PageSize="_page.PageSize" TotalCount="_page.TotalCount" TotalPages="_page.TotalPages" Busy="_busy" PageChanged="ChangePageAsync" />
+    }
+</section>
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private PageResult<OrderSummary>? _page;
+    private ApiException? _error;
+    private bool _busy;
+    private string _search = "", _appliedSearch = "", _sort = "newest";
+    private int _pageNumber = 1, _pageSize = 10;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var sort = _sort switch { "amount" => "TotalAmount", "customer" => "CustomerName", _ => "CreatedAt" };
+            var direction = _sort is "oldest" or "customer" ? "Ascending" : "Descending";
+            _page = await Api.GetOrdersAsync(_pageNumber, _pageSize, _appliedSearch, sort, direction, _lifetime.Token);
+            if (_page.Items.Count == 0 && _pageNumber > 1)
+            {
+                _pageNumber = (int)Math.Max(1, _page.TotalPages);
+                _page = await Api.GetOrdersAsync(_pageNumber, _pageSize, _appliedSearch, sort, direction, _lifetime.Token);
+            }
+        }
+        catch (ApiException ex) { _error = ex; }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        finally { _busy = false; }
+    }
+    private Task SearchAsync() { _appliedSearch = _search.Trim(); _pageNumber = 1; return LoadAsync(); }
+    private Task ResetSearchAsync() { _search = ""; return SearchAsync(); }
+    private Task ChangePageAsync(int page) { _pageNumber = page; return LoadAsync(); }
+    public void Dispose() { _lifetime.Cancel(); _lifetime.Dispose(); }
+}
+

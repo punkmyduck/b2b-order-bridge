@@ -1,5 +1,5 @@
+using OrderBridge.Application.Features.OrderIntegrations.Services.Interfaces;
 using OrderBridge.Application.Features.Orders.ValueObjects;
-using OrderBridge.Application.Services.Interfaces;
 using OrderBridge.Application.ValueObjects;
 using OrderBridge.Domain.Models;
 using Shared.Application.Messaging;

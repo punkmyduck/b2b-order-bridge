@@ -4,6 +4,7 @@ using OrderBridge.Application.Features.Orders.Commands;
 using OrderBridge.Application.Features.Orders.Queries;
 using OrderBridge.Application.Features.Orders.ValueObjects;
 using OrderBridge.Presentation.Requests;
+using Shared.Application.Pagination;
 
 namespace OrderBridge.Presentation.Controllers;
 
@@ -45,5 +46,52 @@ public sealed class OrderController(ISender sender) : BaseApiController
         var result = await sender.Send(query, cancellationToken);
 
         return FromResult(result);
+    }
+
+    [HttpGet("{id:guid}/details")]
+    [ProducesResponseType(typeof(OrderDetailsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OrderDetailsDto>> GetDetailsByIdAsync(
+        [FromRoute] Guid id,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new GetOrderDetailsByIdQuery(id),
+            cancellationToken);
+
+        return FromResult(result);
+    }
+
+    [HttpGet]
+    [ProducesResponseType(typeof(PaginationResult<OrderSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PaginationResult<OrderSummaryDto>>> GetPagedAsync(
+        [FromQuery] GetPagedOrdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        var pagination = new PaginationRequest(request.PageNumber, request.PageSize);
+        var filter = new OrdersFilter(
+            request.Id,
+            request.SourceSystem,
+            request.ExternalOrderId,
+            request.CustomerName,
+            request.OrderStatus,
+            request.PaymentStatus,
+            request.TotalAmountFrom,
+            request.TotalAmountTo,
+            request.Currency,
+            request.CreatedAtFrom,
+            request.CreatedAtTo,
+            request.SearchTerm);
+        var query = new GetPagedOrdersQuery(
+            pagination,
+            filter,
+            request.SortBy,
+            request.SortDirection);
+
+        var result = await sender.Send(query, cancellationToken);
+
+        return FromPaginationResult(result);
     }
 }

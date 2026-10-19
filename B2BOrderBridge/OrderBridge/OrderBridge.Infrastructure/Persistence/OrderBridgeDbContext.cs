@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using OrderBridge.Application.Features.OrderIntegrations.Models;
 using OrderBridge.Domain.Models;
 using Shared.Application.Persistence;
 
@@ -10,6 +11,7 @@ public sealed class OrderBridgeDbContext(DbContextOptions<OrderBridgeDbContext> 
 {
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderIntegration> OrderIntegrations => Set<OrderIntegration>();
+    public DbSet<IntegrationAttempt> IntegrationAttempts => Set<IntegrationAttempt>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
         => builder.Properties<DateTimeOffset>().HaveConversion<UtcDateTimeOffsetConverter>();
