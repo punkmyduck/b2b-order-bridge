@@ -4,6 +4,11 @@
 REST API: `http://localhost:8088/swagger`; база `orders` (локально порт 5433).
 Не читает таблицы сервиса Integrations.
 
+Order.CreateOrder поднимает OrderCreatedDomainEvent. CreateOrderCommandHandler явно вызывает
+доменный dispatcher; Application-handler добавляет сообщение в общий outbox. Затем команда
+вызывает IUnitOfWork.SaveChangesAsync и очищает события после успешного сохранения.
+OrdersUnitOfWork только сохраняет изменения EF, без автоматической обработки событий.
+
 ## Проекты
 
 - `OrderBridge.Orders.Domain`: сущности и правила состояния.

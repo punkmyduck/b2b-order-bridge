@@ -186,3 +186,11 @@ CreateOrderCommandValidator проверяет обязательные данн
 Он не изменяет DTO; нормализацию по-прежнему выполняет домен.
 Для контактного email дополнительно проверяется базовый формат. Проверка формата ИНН
 остаётся отдельным бизнес-правилом.
+
+## Обработка доменных событий
+
+Shared.Application.Events содержит DomainEventNotification<T>, IDomainEventDispatcher и
+DomainEventDispatcher. Это адаптер чистого IDomainEvent к MediatR. Domain не зависит от MediatR.
+Обработчики реализуют INotificationHandler<DomainEventNotification<TDomainEvent>>.
+Application-команда явно вызывает dispatcher перед сохранением. UnitOfWork только сохраняет
+заказ с outbox, после чего команда очищает события. Неявной обработки в SaveChanges нет. Подробнее: [Messaging](../../../docs/messaging.md).

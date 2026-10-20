@@ -3,6 +3,8 @@
 Демонстрационная B2B-система на .NET 10: приём заказов, асинхронное планирование
 и выполнение интеграций, аудит попыток и интерфейс оператора на Blazor.
 
+Общие события, Kafka, outbox/inbox и примеры подключения: [Messaging](docs/messaging.md).
+
 Подробный разбор текущего кода: [архитектура, сообщения, диаграммы и поведение при сбоях](docs/architecture.md).
 
 ## Структура репозитория
@@ -28,6 +30,9 @@ B2BOrderBridge/
 │   ├── Contracts/OrderBridge.Contracts/
 │   ├── BuildingBlocks/
 │   │   ├── Shared.Domain/             # Entity, AggregateRoot, Guard, общие исключения
+│   │   ├── Shared.Messaging.Abstractions/ # Конверт, метаданные и интерфейсы
+│   │   ├── Shared.Messaging.Kafka/        # Общий транспорт и подписки
+│   │   ├── Shared.Messaging.Persistence/  # Общие PostgreSQL outbox/inbox
 │   │   └── Shared.Application/        # Result, CQRS, validation, pagination, базовые интерфейсы
 │   └── Web/OrderBridge.Web/
 ├── tests/
@@ -99,7 +104,9 @@ Blazor объединяет ответы двух API на своём серве
 
 ## Сценарий и надёжность
 
-1. Создание заказа сохраняет заказ и `OrderCreatedV1` в одной транзакции Orders DB.
+1. Order.CreateOrder поднимает OrderCreatedDomainEvent. CreateOrderCommandHandler явно вызывает
+   доменный dispatcher: Application-handler добавляет OrderCreatedV1 в outbox. Затем UnitOfWork
+   сохраняет заказ с outbox, а команда очищает доменные события.
 2. Outbox dispatcher публикует событие с ключом `OrderId`, сохраняя исходный `EventId`.
 3. Consumer Integrations атомарно сохраняет inbox-отметку, локальный снимок и план интеграций.
 4. Kafka offset подтверждается после коммита этой транзакции.
@@ -108,7 +115,7 @@ Blazor объединяет ответы двух API на своём серве
 6. Результат и история каждой попытки доступны в карточке заказа.
 
 Доставка событий — **at least once**. Сбой после подтверждения публикации, но до
-отметки outbox может вызвать повтор. Inbox защищает от одинакового `EventId`,
+отметки outbox может вызвать повтор. Inbox защищает от одинакового `EventId` и повторного `IdempotencyKey` обработчика,
 а уникальность пары заказа / Target / Operation и проверка существующего плана
 предотвращают создание повторных интеграций при повторно обёрнутом событии.
 Локальный снимок создания заказа не перезаписывается повторной доставкой.
