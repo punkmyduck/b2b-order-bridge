@@ -75,6 +75,25 @@ public sealed class OrderTests
         Assert.Equal(occurredAt, order.UpdatedAt);
     }
 
+    [Fact]
+    public void Creation_raises_one_immutable_business_snapshot()
+    {
+        var input = new List<OrderLine> { Line(Guid.NewGuid(), 2, 10) };
+        var order = Create(input);
+        var created = Assert.IsType<OrderCreatedDomainEvent>(Assert.Single(order.DomainEvents));
+        input.Clear();
+        order.Cancel(order.CreatedAt.AddMinutes(1));
+        Assert.Equal(order.Id, created.OrderId);
+        Assert.Equal(order.CreatedAt, created.OccurredAt);
+        Assert.NotEqual(Guid.Empty, created.EventId);
+        Assert.Equal(order.Customer, created.Customer);
+        Assert.Equal(20m, created.TotalAmount);
+        Assert.Equal(2m, Assert.Single(created.Lines).Quantity);
+        Assert.Throws<NotSupportedException>(() => ((IList<OrderCreatedLineSnapshot>)created.Lines).Clear());
+        Assert.All(typeof(OrderCreatedDomainEvent).GetProperties(), property => Assert.Null(property.SetMethod));
+        Assert.Single(order.DomainEvents.OfType<OrderCreatedDomainEvent>());
+    }
+
     private static OrderLine Line(Guid id, decimal quantity, decimal price)
         => new(id, "SKU", "Item", quantity, price);
 

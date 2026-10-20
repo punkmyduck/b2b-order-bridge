@@ -112,7 +112,7 @@ namespace OrderBridge.Orders.Infrastructure.Persistence.Migrations
                     b.ToTable("OrderLines", (string)null);
                 });
 
-            modelBuilder.Entity("OrderBridge.Orders.Infrastructure.Messaging.OutboxMessage", b =>
+            modelBuilder.Entity("Shared.Messaging.Persistence.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
@@ -121,6 +121,11 @@ namespace OrderBridge.Orders.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<string>("LastError")
                         .HasMaxLength(2048)
@@ -132,8 +137,10 @@ namespace OrderBridge.Orders.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("OrderId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("OrderingKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<string>("Payload")
                         .IsRequired()
@@ -144,6 +151,11 @@ namespace OrderBridge.Orders.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Topic")
+                        .IsRequired()
+                        .HasMaxLength(249)
+                        .HasColumnType("character varying(249)");
 
                     b.HasKey("Id");
 

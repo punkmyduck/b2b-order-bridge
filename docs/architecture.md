@@ -1,8 +1,9 @@
 # Как работает OrderBridge
 
-Документ описывает код после разделения Orders и Integrations, по состоянию на 19.10.2026.
+Документ описывает код после разделения Orders и Integrations, по состоянию на 20.10.2026.
 Пунктирные связи и отдельные примечания обозначают предусмотренные расширения, которые ещё не работают.
 Диаграммы написаны на Mermaid и отображаются в GitHub. Их исходники находятся прямо в этом файле.
+Подключение общих библиотек и примеры кода: [Messaging](messaging.md).
 
 ## 1. Какие процессы запущены
 
@@ -30,9 +31,9 @@ flowchart TB
 
     subgraph Integrations["Микросервис Integrations — один процесс"]
         IA["Integrations API :8089"] --> IQ["MediatR / read queries"]
-        IC[OrderCreatedConsumer] --> IP[OrderCreatedProcessor]
+        IC[KafkaConsumer] --> IP[OrderCreatedHandler]
         IP --> PL[OrderIntegrationPlanner]
-        IP --> PS[IntegrationPlanningStore]
+        IP --> PS["EfInboxProcessor + IntegrationPlanningStore"]
         PS --> IDB[("Integrations PostgreSQL\nIntegrationOrders / InboxMessages\nOrderIntegrations / IntegrationAttempts")]
         IQ --> IDB
         IW[IntegrationWorker] --> JS[IIntegrationJobStore]
@@ -78,6 +79,9 @@ src/
   Contracts/OrderBridge.Contracts/
   BuildingBlocks/Shared.Domain/
   BuildingBlocks/Shared.Application/
+  BuildingBlocks/Shared.Messaging.Abstractions/
+  BuildingBlocks/Shared.Messaging.Kafka/
+  BuildingBlocks/Shared.Messaging.Persistence/
   Web/OrderBridge.Web/
 tests/
   Services/Orders/
@@ -94,28 +98,36 @@ flowchart LR
     Api --> Infra[Infrastructure: EF, Kafka, BackgroundService]
     Infra --> App
     App --> Domain[Domain: сущности и переходы состояний]
-    App --> Contracts[Contracts: формат межсервисных событий]
+    App --> Contracts[Contracts: payload и определения событий]
+    App --> MA[Messaging.Abstractions]
+    Infra --> MK[Messaging.Kafka]
+    Infra --> MP[Messaging.Persistence]
     App --> SA[Shared.Application]
     Domain --> SD[Shared.Domain]
 ```
 
 Infrastructure реализует интерфейсы Application; интерфейсы регистрируются в DI.
-Например, Application использует `IUnitOfWork`, а при выполнении это собственный DbContext сервиса.
+Application использует IUnitOfWork. В Orders это OrdersUnitOfWork, который сохраняет
+tracked-изменения OrdersDbContext; в Integrations — его DbContext. Доменный dispatcher
+вызывается явно в Application перед сохранением, UnitOfWork его не запускает.
 API собирает зависимости в `Program.cs`, вызывая `AddApplication`, `AddPersistence`, `AddMessaging`.
 
 | Проект/слой | Что в нём находится |
 |---|---|
 | Orders.Domain | `Order`, `OrderLine`, `CustomerSnapshot`, валюты, статусы заказа и оплаты, доменные события |
-| Orders.Application | Команда создания, запросы чтения, валидаторы, DTO, интерфейс `IOrderCreatedOutbox` |
-| Orders.Infrastructure | `OrdersDbContext`, EF-репозитории, outbox, Kafka producer, dispatcher, миграции |
+| Orders.Application | Команда создания, запросы чтения, валидаторы, DTO, доменный обработчик OrderCreated → outbox |
+| Orders.Infrastructure | OrdersUnitOfWork, OrdersDbContext, репозитории, миграции и регистрация общих outbox/Kafka |
 | Orders.Api | HTTP-контроллер, запросы API, преобразование Result в HTTP, обработка validation errors, health/Swagger |
 | Integrations.Domain | `OrderIntegration`, Target/Operation/Status, правила переходов состояний |
 | Integrations.Application | Планирование, выполнение, resolver, retry policy, `IntegrationAttempt`, запросы аудита, snapshot и интерфейсы хранилищ |
-| Integrations.Infrastructure | Собственная БД, Kafka consumer, атомарное сохранение плана, выборка заданий, worker |
+| Integrations.Infrastructure | Собственная БД, регистрация общего inbox/consumer, сохранение плана, выборка заданий, worker |
 | Integrations.Api | Чтение статусов и попыток через HTTP, health/Swagger, composition root |
-| Contracts | Только сериализуемые `OrderCreatedV1`, `OrderSnapshotV1`, `CustomerSnapshotV1`, `OrderLineV1` |
+| Contracts | Payload и определения маршрутов/версий событий: `OrderCreatedV1`, `OrderSnapshotV1`, `CustomerSnapshotV1`, `OrderLineV1` |
 | Shared.Domain | Базовые Entity/AggregateRoot, Guard, доменные абстракции |
 | Shared.Application | Result/Error, CQRS-контракты поверх MediatR, validation behaviour, pagination, общие интерфейсы |
+| Shared.Messaging.Abstractions | IntegrationEvent, метаданные, определения событий и интерфейсы |
+| Shared.Messaging.Kafka | Универсальные producer/consumer, сериализация, подписки, scopes, offsets, DLQ |
+| Shared.Messaging.Persistence | Универсальные PostgreSQL outbox/inbox, EF-модель и транзакционная обработка |
 | Web | Собственные модели представления, HTTP-клиенты, страницы; без ссылок на backend-проекты |
 
 У сервисов нет ProjectReference друг на друга и нет общего бизнес-домена. Общие Contracts
@@ -130,18 +142,24 @@ sequenceDiagram
     participant C as HTTP-клиент / Blazor
     participant A as Orders API
     participant H as CreateOrderCommandHandler
+    participant U as OrdersUnitOfWork
+    participant E as Domain event handler
     participant D as Orders DB
     participant O as OutboxDispatcher
     participant K as Kafka
-    participant R as OrderCreatedConsumer
-    participant P as Processor / Planner / Store
+    participant R as KafkaConsumer
+    participant P as Inbox / Handler / Planner / Store
     participant I as Integrations DB
     C->>A: POST /api/orders
     A->>H: MediatR.Send(CreateOrderCommand), после validation
-    H->>H: Создать Order и OrderLine, рассчитать сумму
-    H->>D: SaveChanges: Order + Lines + OutboxMessage
-    Note over H,D: Одна локальная транзакция
-    D-->>H: COMMIT
+    H->>H: Order.CreateOrder создаёт OrderCreatedDomainEvent
+    H->>E: Явный DispatchAsync доменного события
+    E->>E: Map в IntegrationEvent, добавить в tracked outbox
+    E-->>H: Обработано в памяти, БД ещё не сохранена
+    H->>U: IUnitOfWork.SaveChangesAsync
+    U->>D: SaveChanges: Order + Lines + OutboxMessage; COMMIT
+    U-->>H: Успех
+    H->>H: order.ClearDomainEvents()
     H-->>A: Result<CreateOrderResponse>
     A-->>C: 201 Created + DTO + Location
     Note over C,I: 201 подтверждает сохранение заказа, но не завершение интеграций
@@ -150,11 +168,15 @@ sequenceDiagram
     K-->>O: Подтверждение публикации
     O->>D: PublishedAt, PublishAttempts; COMMIT
     K->>R: Запись topic: key + JSON + partition/offset
-    R->>R: Проверить JSON, scenario, идентификаторы, key
-    R->>P: ProcessAsync(OrderCreatedV1)
-    P->>P: Snapshot + список OrderIntegration по сценарию
-    P->>I: BEGIN; inbox + snapshot + jobs; COMMIT
-    I-->>P: Сохранено либо EventId уже обработан
+    R->>R: Проверить JSON, metadata, тип/версию и record key
+    R->>P: Inbox.ProcessAsync, затем Handler.HandleAsync(envelope)
+    P->>I: BEGIN; INSERT inbox с envelope
+    alt Новое событие
+        P->>P: Handler: проверить payload, map snapshot, составить jobs
+        P->>I: Сохранить snapshot + jobs; COMMIT
+    else Повтор EventId или IdempotencyKey
+        P->>P: Пропустить handler
+    end
     P-->>R: Успех
     R->>K: Commit offset
 ```
@@ -162,15 +184,18 @@ sequenceDiagram
 1. `OrderController` переводит HTTP DTO в `CreateOrderCommand` и вызывает `ISender.Send`.
 2. `ValidationBehaviour` находит валидаторы этой команды, выполняет их последовательно,
    затем передаёт управление хендлеру. Последовательность важна для валидаторов с общим DbContext.
-3. Хендлер создаёт доменный заказ и позиции. Guard нормализует значения и защищает инварианты.
-   Заказ начинается в `Received`, оплата — в `Pending`.
-4. `IRepository.Add` и `IOrderCreatedOutbox.Add` только добавляют объекты в один scoped EF-контекст.
-   Один `SaveChangesAsync` сохраняет заказ, позиции и outbox атомарно.
+3. Order.CreateOrder создаёт заказ и поднимает OrderCreatedDomainEvent с неизменяемым снимком
+   бизнес-данных. Guard защищает инварианты. Заказ начинается в Received, оплата — в Pending.
+4. Команда добавляет заказ в репозиторий и явно вызывает IDomainEventDispatcher для его DomainEvents.
+   Application-обработчик преобразует OrderCreatedDomainEvent в IntegrationEvent<OrderCreatedV1>
+   и добавляет его в outbox того же EF-контекста. Затем команда вызывает IUnitOfWork.SaveChangesAsync:
+   заказ, позиции и outbox сохраняются атомарно. Только после успешного сохранения команда очищает
+   order.DomainEvents. UnitOfWork не диспатчит и не очищает события.
 5. Хендлер **не вызывает Kafka** и **не создаёт OrderIntegration**. Поэтому временно недоступная
    Kafka не мешает сохранить заказ.
 6. HTTP возвращает `201 Created`. К этому моменту интеграций в другом сервисе ещё может не быть.
 
-**Сейчас сценарий жёстко задан как `FullCycle` в CreateOrderCommandHandler.** Внешний клиент
+**Сейчас сценарий задан как FullCycle в OrderCreatedDomainEventHandler в Application.** Внешний клиент
 не выбирает его в CreateOrderRequest. В planner предусмотрены другие сценарии, но отдельных
 HTTP-сценариев создания для них ещё нет.
 
@@ -188,46 +213,50 @@ HTTP-сценариев создания для них ещё нет.
 | Контекст выполнения | `IntegrationExecutionContext` | Хендлер выполнения → адаптер | Обычный вызов метода, не брокер |
 | Результат выполнения | `IntegrationExecutionResult` | Адаптер → хендлер выполнения | Обычный возвращаемый объект |
 | Локальные read queries | Заказы, детали, интеграции, попытки | Контроллеры → query handlers | MediatR → read repositories |
-| Доменные события | `OrderCancelledEvent`, `PaidCancelledOrderEvent` | Методы `Order` → коллекция DomainEvents | Пока только память; автоматической публикации нет |
+| Доменные события | OrderCreatedDomainEvent, OrderCancelledEvent, PaidCancelledOrderEvent | Order → Application command → dispatcher → event handlers | Внутри процесса через DomainEventNotification<T> / MediatR |
 
 Нет событий `IntegrationSucceeded`, `OrderUpdated`, `OrderPaid` и обратных сообщений из
 Integrations в Orders. Изменение статуса интеграции не меняет статус заказа в Orders.
-Наличие `DomainEvents` у AggregateRoot само по себе ничего не публикует:
-DbContext игнорирует это свойство, dispatcher доменных событий сейчас не реализован.
+Доменные события не являются wire-контрактами Kafka. CreateOrderCommandHandler явно диспатчит
+их перед сохранением через общий DomainEventDispatcher из Shared.Application. Только OrderCreatedDomainEvent
+сейчас имеет обработчик, создающий интеграционное сообщение. Для OrderCancelledEvent и
+PaidCancelledOrderEvent внешние контракты/обработчики пока не добавлены.
+DbContext игнорирует DomainEvents в EF-модели. Доменное событие само по себе не является durable:
+сохранность обеспечивается тем, что его внешняя проекция попадает в outbox вместе с заказом.
 
 ### 4.1. Основное событие
 
 Topic: `orderbridge.orders.created.v1`.
-Тип контракта: `OrderCreatedV1`; константа EventType: `order.created.v1`.
+Payload: `OrderCreatedV1`. Конверт: `IntegrationEvent<OrderCreatedV1>`.
+`OrderCreatedEvent.Definition` задаёт EventType `order.created.v1`, SchemaVersion 1 и default topic.
 Kafka key: `OrderId.ToString("N")`, то есть GUID без дефисов.
 Value: JSON с camelCase. Упрощённый, но соответствующий контракту пример:
 
 ```json
 {
-  "eventId": "102a273b-4101-45b6-a028-a433783568d0",
-  "occurredAt": "2026-10-19T12:00:00+00:00",
-  "processingScenario": "FullCycle",
-  "order": {
-    "id": "3a0fb03a-302e-4c21-a1a7-d9d52fa9b5a6",
-    "sourceSystem": "marketplace",
-    "externalOrderId": "ORDER-421",
-    "customer": {
-      "companyName": "ACME",
-      "taxId": "7701234567",
-      "contactEmail": "orders@example.com"
-    },
-    "currency": "RUB",
-    "totalAmount": 2000.00,
-    "lines": [
-      {
-        "id": "80fb85a9-df56-4df2-a77c-a88087d688af",
-        "sku": "SKU-1",
-        "name": "Товар",
-        "quantity": 2,
-        "unitPrice": 1000.00,
-        "lineTotal": 2000.00
-      }
-    ]
+  "metadata": {
+    "eventId": "102a273b-4101-45b6-a028-a433783568d0",
+    "eventType": "order.created.v1",
+    "schemaVersion": 1,
+    "source": "orders",
+    "occurredAt": "2026-10-20T12:00:00+00:00",
+    "idempotencyKey": "order.created:3a0fb03a302e4c21a1a7d9d52fa9b5a6",
+    "orderingKey": "3a0fb03a302e4c21a1a7d9d52fa9b5a6",
+    "correlationId": "102a273b410145b6a028a433783568d0",
+    "causationId": null,
+    "traceParent": null
+  },
+  "payload": {
+    "processingScenario": "FullCycle",
+    "order": {
+      "id": "3a0fb03a-302e-4c21-a1a7-d9d52fa9b5a6",
+      "sourceSystem": "marketplace",
+      "externalOrderId": "ORDER-421",
+      "customer": { "companyName": "ACME", "taxId": "7701234567", "contactEmail": "orders@example.com" },
+      "currency": "RUB",
+      "totalAmount": 2000.00,
+      "lines": [{ "id": "80fb85a9-df56-4df2-a77c-a88087d688af", "sku": "SKU-1", "name": "Товар", "quantity": 2, "unitPrice": 1000.00, "lineTotal": 2000.00 }]
+    }
   }
 }
 ```
@@ -236,8 +265,9 @@ Value: JSON с camelCase. Упрощённый, но соответствующ�
 Локальный `OrderExecutionSnapshot` сохраняет нужные исполнителю поля; текущий mapper не переносит
 Id и LineTotal позиций: локальная DTO позиции содержит SKU, Name, Quantity, UnitPrice.
 
-`EventType` хранится в строке outbox, но отдельного поля `eventType` в JSON этого контракта нет.
-Kafka headers с traceparent/correlationId сейчас не добавляются.
+`EventType`, версия, источник, идентификаторы и trace context находятся в metadata.
+Topic хранится в определении маршрута и outbox-записи; payload не знает деталей доставки.
+Kafka headers не используются: traceParent передаётся в конверте и восстанавливается при чтении.
 
 ### 4.2. Настройки Kafka и подтверждения
 
@@ -267,7 +297,7 @@ Idempotent producer не делает PostgreSQL и Kafka одной транз�
 ### 4.3. DLQ
 
 Если JSON не читается, обязательные поля/проверяемые значения некорректны, сценарий неизвестен
-или Kafka key не соответствует OrderId, consumer отправляет технический JSON в
+или Kafka key не соответствует metadata.OrderingKey, consumer отправляет технический JSON в
 `orderbridge.orders.created.v1.dlq`:
 
 ```json
@@ -287,9 +317,9 @@ DLQ key: `sourceTopic:partition:offset`. Сначала подтверждает
 Сбой между этими двумя действиями может создать дубликат DLQ-сообщения с тем же ключом.
 Автоматического потребителя DLQ, интерфейса её просмотра и replay сейчас нет.
 
-Проверка входного события не равна полной бизнес-валидации всех вложенных полей.
-Например, null-элемент в Lines не проверяется ReadScenario и может вызвать исключение при mapping.
-Такое исключение пойдёт в общий механизм повторного чтения, а не обязательно в DLQ.
+Транспорт проверяет метаданные и версию; прикладной handler проверяет payload, включая null-позиции,
+сценарий и соответствие OrderId ключу порядка. Явная InvalidEventException приводит к rollback inbox
+и DLQ. Неожиданная ошибка или отказ БД приводит к повтору без продвижения offset.
 
 ## 5. Outbox, inbox и границы транзакций
 
@@ -313,15 +343,19 @@ DLQ key: `sourceTopic:partition:offset`. Сначала подтверждает
 `NextAttemptAt = now + 10 секунд`. Лимита публикаций outbox сейчас нет.
 При успехе записывается `PublishedAt`; это состояние доставки события, не состояние интеграций.
 
-**IntegrationPlanningStore.SaveOnceAsync**:
+**EfInboxProcessor<IntegrationsDbContext>.ProcessAsync**:
 
 1. Открывает транзакцию Integrations DB.
-2. Вставляет inbox с ключом `(Consumer, EventId)` через `ON CONFLICT DO NOTHING`.
-   Если запись уже есть, повторно план не сохраняется.
-3. Сохраняет JSON снимка в `IntegrationOrders`, если такого OrderId ещё нет.
-   Первый принятый снимок не перезаписывается.
-4. Добавляет ещё отсутствующие пары Target + Operation для заказа.
-5. Коммитит транзакцию. Только затем consumer подтверждает Kafka offset.
+2. Вставляет inbox с метаданными и полным конвертом через `ON CONFLICT DO NOTHING`.
+   Дедупликация работает по `(Consumer, EventId)` и `(Consumer, Source, EventType, IdempotencyKey)`.
+3. Только для нового сообщения вызывает `OrderCreatedHandler`, который проверяет payload,
+   преобразует его в собственный snapshot и составляет план.
+4. Handler вызывает IntegrationPlanningStore.SaveAsync. Тот сохраняет первый snapshot и добавляет
+   отсутствующие пары Target + Operation, используя уже открытую транзакцию.
+5. Общий inbox processor вызывает SaveChanges и коммитит транзакцию. Затем consumer коммитит offset.
+
+Inbox не является отдельной очередью со своим worker: вставка и обработка выполняются в одной
+транзакции. Payload сохраняется для аудита; автоматического replay inbox пока нет.
 
 Строка `Consumer` в inbox: `order-created-integration-planner-v1`.
 Это отдельный идентификатор обработчика, **он не совпадает** с Kafka consumer group.
@@ -499,7 +533,7 @@ RetryScheduled — состояние задачи интеграции; зав�
 ```mermaid
 erDiagram
     ORDERS_DB_ORDERS ||--|{ ORDERS_DB_ORDER_LINES : owns
-    ORDERS_DB_ORDERS ||..o{ ORDERS_DB_OUTBOX : "OrderId, логическая связь"
+    ORDERS_DB_ORDERS ||..o{ ORDERS_DB_OUTBOX : "OrderingKey, логическая связь"
     INTEGRATIONS_DB_INTEGRATION_ORDERS ||--o{ INTEGRATIONS_DB_ORDER_INTEGRATIONS : "локальный FK OrderId"
     INTEGRATIONS_DB_ORDER_INTEGRATIONS ||--o{ INTEGRATIONS_DB_ATTEMPTS : "FK OrderIntegrationId"
     INTEGRATIONS_DB_INBOX {
@@ -516,16 +550,17 @@ erDiagram
 
 Между двумя БД **нет FK и JOIN**. Id заказа в snapshot совпадает с Id оригинала,
 но локальный FK OrderIntegrations указывает на IntegrationOrders в той же БД Integrations.
-В outbox есть OrderId, однако EF-конфигурация не объявляет FK на Orders.
-Inbox хранит идентификатор обработанного события, а не весь payload Kafka.
+Outbox больше не содержит специфичный OrderId: его роль для данного события выполняет OrderingKey.
+Inbox хранит метаданные и весь конверт новых сообщений. У старых receipts Payload остаётся null,
+поскольку их JSON ранее не сохранялся.
 
 | Данные | Что хранится / ключевые ограничения |
 |---|---|
 | Orders | Источник, внешний номер, customer snapshot, сумма/валюта, статусы, даты; unique `(SourceSystem, ExternalOrderId)` |
 | OrderLines | Позиции заказа, локальный FK, количество/цена/сумма |
-| OutboxMessages | EventId как Id, OrderId, EventType, JSON payload, даты публикации/повтора, PublishAttempts, LastError |
+| OutboxMessages | EventId как Id, Topic, OrderingKey, IdempotencyKey, EventType, JSON конверт, даты публикации/повтора, PublishAttempts, LastError |
 | IntegrationOrders | OrderId как Id, JSON execution snapshot, ReceivedAt |
-| InboxMessages | Unique/PK `(Consumer, EventId)` и ProcessedAt |
+| InboxMessages | PK `(Consumer, EventId)`, unique `(Consumer, Source, EventType, IdempotencyKey)`, JSON конверт, ProcessedAt |
 | OrderIntegrations | OrderId, Target/Operation/Status, стабильный IdempotencyKey, ExternalEntityId, AttemptCount, NextAttemptAt, последняя ошибка, даты |
 | IntegrationAttempts | Id, OrderIntegrationId, AttemptNumber, Outcome, ResponseStatusCode, ErrorCode/Message, TraceId, StartedAt/CompletedAt |
 
@@ -535,6 +570,7 @@ Inbox хранит идентификатор обработанного соб�
 |---|---|
 | `(SourceSystem, ExternalOrderId)` | Не позволяет создать вторую запись того же внешнего заказа |
 | EventId + inbox Consumer | Повторная доставка одного события не применяет план второй раз |
+| Consumer + Source + EventType + event IdempotencyKey | Повторно обёрнутое событие с новым EventId не вызывает handler второй раз |
 | `(OrderId, Target, Operation)` | Не позволяет создать второй одинаковый тип интеграции для заказа |
 | `(Target, IdempotencyKey)` | Не позволяет назначить один ключ двум задачам одного Target |
 | `(OrderIntegrationId, AttemptNumber)` | Не позволяет записать два одинаковых номера попытки |
@@ -552,8 +588,9 @@ EventId, OrderId, IntegrationId, AttemptId — разные идентифика
 
 TraceId — диагностический идентификатор Activity, не ключ идемпотентности.
 Worker создаёт Activity на обработку задачи; её 32-символьный TraceId сохраняется в попытке.
-Следующий запуск может иметь новый TraceId. Сквозная трасса HTTP → Kafka → worker сейчас
-не переносится через headers, и экспортёр OpenTelemetry не подключён.
+Следующий запуск может иметь новый TraceId. TraceParent из HTTP Activity сохраняется в конверте
+и восстанавливается общим Kafka processor. Исполнитель задач запускается позднее и создаёт свою
+Activity; непрерывная трасса до внешнего вызова и экспортёр OpenTelemetry пока не подключены.
 
 ## 10. Чтение и интерфейс оператора
 
@@ -613,13 +650,14 @@ FluentValidationException обрабатывается отдельно как 4
 
 | Сбой | Поведение текущего кода |
 |---|---|
-| Ошибка до коммита создания | Заказ и outbox откатываются вместе |
+| Ошибка до коммита создания | Заказ и outbox откатываются вместе; доменные события не очищаются |
+| Ошибка доменного обработчика | Команда не вызывает SaveChanges; события остаются у заказа, scope завершается без сохранения |
 | Kafka недоступна | Заказы сохраняются; outbox остаётся неопубликованным и повторяется |
 | Kafka приняла событие, процесс упал до PublishedAt | Событие может быть опубликовано повторно; inbox защищает применение |
 | Integrations остановлен | События остаются в Kafka в пределах retention; после запуска чтение продолжается с offsets |
 | Ошибка Integrations DB при планировании | Inbox/snapshot/jobs откатываются; offset не подтверждается |
 | План сохранён, но offset не подтверждён | Событие придёт повторно; inbox не даст повторно применить его |
-| Некорректное событие, обработанное как JsonException | DLQ, затем commit исходного offset |
+| Некорректное событие, обработанное как InvalidEventException | DLQ, затем commit исходного offset |
 | Временный ответ адаптера | Попытка Failed, задача RetryScheduled; позже worker запускает новую попытку |
 | Постоянная ошибка или 10-я временная ошибка | Задача Failed, автоматическая выборка её больше не включает |
 | Плавная отмена во время адаптера | Хендлер пытается сохранить transient cancellation и запланировать повтор |
@@ -669,17 +707,17 @@ Outbox/inbox/attempts автоматически не очищаются. Kafka 
 на вопрос, возникающий после предыдущего:
 
 1. [OrderController](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Api/Controllers/OrderController.cs) — вход HTTP и ответы.
-2. [CreateOrderCommand](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Application/Features/Orders/Commands/CreateOrderCommand.cs) — что именно сохраняется при создании.
+2. [CreateOrderCommand](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Application/Features/Orders/Commands/CreateOrderCommand.cs) — создание агрегата, явный dispatch, сохранение и очистка событий. [OrderCreatedDomainEventHandler](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Application/Messaging/OrderCreatedDomainEventHandler.cs) переводит доменное событие в сообщение; [OrdersUnitOfWork](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Infrastructure/Persistence/OrdersUnitOfWork.cs) сохраняет уже подготовленные изменения одним EF SaveChanges.
 3. [OrderCreatedV1](../B2BOrderBridge/src/Contracts/OrderBridge.Contracts/Events/OrderCreatedV1.cs) — контракт через границу сервисов.
-4. [OrderCreatedOutbox](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Infrastructure/Messaging/OrderCreatedOutbox.cs) и [OutboxDispatcher](../B2BOrderBridge/src/Services/Orders/OrderBridge.Orders.Infrastructure/Messaging/OutboxDispatcher.cs) — как событие доходит до Kafka.
-5. [OrderCreatedConsumer](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Infrastructure/Messaging/OrderCreatedConsumer.cs) — JSON, offsets, DLQ и повторное чтение.
-6. [OrderCreatedProcessor](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Application/Messaging/OrderCreatedProcessor.cs), [planner](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Application/Features/OrderIntegrations/Services/Implementations/OrderIntegrationPlanner.cs), [IntegrationPlanningStore](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Infrastructure/Persistence/IntegrationPlanningStore.cs) — как появляются snapshot и задания.
+4. [EfEventOutbox](../B2BOrderBridge/src/BuildingBlocks/Shared.Messaging.Persistence/Outbox/EfEventOutbox.cs) и [OutboxDispatcher](../B2BOrderBridge/src/BuildingBlocks/Shared.Messaging.Persistence/Outbox/OutboxDispatcher.cs) — как событие доходит до Kafka.
+5. [KafkaConsumer](../B2BOrderBridge/src/BuildingBlocks/Shared.Messaging.Kafka/Consumers/KafkaConsumer.cs) — JSON, offsets, DLQ и повторное чтение.
+6. [OrderCreatedHandler](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Application/Messaging/OrderCreatedHandler.cs), [planner](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Application/Features/OrderIntegrations/Services/Implementations/OrderIntegrationPlanner.cs), [IntegrationPlanningStore](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Infrastructure/Persistence/IntegrationPlanningStore.cs) — как появляются snapshot и задания.
 7. [IntegrationWorker](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Infrastructure/BackgroundJobs/IntegrationWorker.cs) и [IntegrationJobStore](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Infrastructure/Services/IntegrationJobStore.cs) — как выбираются и запускаются задачи.
 8. [ProcessOrderIntegrationCommand](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Application/Features/OrderIntegrations/Commands/ProcessOrderIntegrationCommand.cs) — две записи состояния, вызов адаптера, завершение попытки.
 9. [OrderIntegration](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Domain/Models/OrderIntegration.cs) и [retry policy](../B2BOrderBridge/src/Services/Integrations/OrderBridge.Integrations.Application/Features/OrderIntegrations/Services/Implementations/BaseOrderIntegrationRetryPolicy.cs) — разрешённые переходы и расписание повторов.
 10. [OrderBridgeApiClient](../B2BOrderBridge/src/Web/OrderBridge.Web/Services/OrderBridgeApiClient.cs) — сбор карточки из двух API.
 
-Для проверки понимания удобно проследить один OrderId: найти Orders/Outbox в первой БД,
+Для проверки понимания удобно проследить один OrderId: найти Orders и outbox по OrderingKey в первой БД,
 его EventId в inbox второй БД, snapshot, четыре задания и попытки Telegram.
 Ни один отдельный статус не описывает всю цепочку: `PublishedAt` — доставка в Kafka,
 inbox — применение события, `IntegrationStatus` — состояние задачи, `Outcome` — итог одной попытки.

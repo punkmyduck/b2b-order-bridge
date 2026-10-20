@@ -1,3 +1,5 @@
+using OrderBridge.Contracts.Events;
+using OrderBridge.Integrations.Application.Messaging;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
@@ -5,6 +7,7 @@ using OrderBridge.Integrations.Application.Features.OrderIntegrations.Services.I
 using OrderBridge.Integrations.Application.Features.OrderIntegrations.Services.IntegrationHandlers;
 using OrderBridge.Integrations.Application.Features.OrderIntegrations.Services.Interfaces;
 using Shared.Application.Behaviors;
+using Shared.Messaging.Abstractions.Processing;
 
 namespace OrderBridge.Integrations.Application;
 
@@ -27,6 +30,7 @@ public static class DependencyInjection
             includeInternalTypes: true,
             lifetime: ServiceLifetime.Transient);
 
+        services.AddScoped<IEventHandler<OrderCreatedV1>, OrderCreatedHandler>();
         services.AddScoped<IOrderIntegrationPlanner, OrderIntegrationPlanner>();
         services.AddSingleton<IOrderIntegrationRetryPolicy, BaseOrderIntegrationRetryPolicy>();
         services.AddScoped<IOrderIntegrationResolver, OrderIntegrationResolver>();

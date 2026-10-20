@@ -92,6 +92,7 @@ public class Order : AggregateRoot<Guid>
             lines,
             createdAt);
 
+        order.RaiseDomainEvent(new OrderCreatedDomainEvent(Guid.NewGuid(), createdAt, order));
         return order;
     }
 
