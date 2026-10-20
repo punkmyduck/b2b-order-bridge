@@ -5,7 +5,7 @@ namespace OrderBridge.Integrations.Application.Messaging;
 
 public interface IIntegrationPlanningStore
 {
-    /// <summary>Atomically persists the inbox receipt, local order projection and planned integrations.</summary>
-    Task SaveOnceAsync(Guid eventId, OrderExecutionSnapshot order, IReadOnlyList<OrderIntegration> integrations,
+    /// <summary>Persists the local projection and jobs inside the inbox transaction.</summary>
+    Task SaveAsync(OrderExecutionSnapshot order, IReadOnlyList<OrderIntegration> integrations,
         CancellationToken cancellationToken);
 }

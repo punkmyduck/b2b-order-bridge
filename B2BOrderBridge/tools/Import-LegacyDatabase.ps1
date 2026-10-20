@@ -23,10 +23,32 @@ if ((Read-LegacySql "SELECT to_regclass('public.`"Orders`"') IS NOT NULL;") -ne 
     throw 'The source container is not a legacy OrderBridge database.'
 }
 $ordersSql = @('BEGIN;')
-foreach ($table in @('Orders', 'OrderLines', 'OutboxMessages')) {
+foreach ($table in @('Orders', 'OrderLines')) {
     if ((Read-LegacySql "SELECT to_regclass('public.`"$table`"') IS NOT NULL;") -eq 't') {
         $ordersSql += Export-Table "public.`"$table`""
     }
+}
+if ((Read-LegacySql "SELECT to_regclass('public.`"OutboxMessages`"') IS NOT NULL;") -eq 't') {
+    $outboxQuery = @'
+COPY (
+ SELECT "Id", "EventType", 'orderbridge.orders.created.v1', replace("OrderId"::text, '-', ''),
+   replace("Id"::text, '-', ''), jsonb_build_object(
+     'metadata', jsonb_build_object('eventId', "Id", 'eventType', "EventType", 'schemaVersion', 1,
+       'source', 'orders', 'occurredAt', "OccurredAt", 'idempotencyKey', replace("Id"::text, '-', ''),
+       'orderingKey', replace("OrderId"::text, '-', ''), 'correlationId', replace("Id"::text, '-', '')),
+     'payload', jsonb_build_object('processingScenario', "Payload"->'processingScenario', 'order', "Payload"->'order')),
+   "OccurredAt", "NextAttemptAt", "PublishedAt", "PublishAttempts", "LastError"
+ FROM "OutboxMessages"
+) TO STDOUT WITH CSV;
+'@
+    $outbox = (Read-LegacySql $outboxQuery) -join "`n"
+    $ordersSql += @(
+        'SET LOCAL search_path TO public;',
+        'CREATE TEMP TABLE "LegacyOutbox" (LIKE "OutboxMessages" INCLUDING DEFAULTS) ON COMMIT DROP;',
+        'COPY "LegacyOutbox" ("Id", "EventType", "Topic", "OrderingKey", "IdempotencyKey", "Payload", "OccurredAt", "NextAttemptAt", "PublishedAt", "PublishAttempts", "LastError") FROM STDIN WITH CSV;',
+        $outbox, '\.',
+        'INSERT INTO "OutboxMessages" SELECT * FROM "LegacyOutbox" ON CONFLICT DO NOTHING;'
+    )
 }
 $ordersSql += 'COMMIT;'
 
@@ -50,13 +72,29 @@ $integrationSql = @(
     '\.',
     'INSERT INTO "IntegrationOrders" SELECT * FROM "LegacyOrderSnapshots" ON CONFLICT ("Id") DO NOTHING;'
 )
-foreach ($table in @('OrderIntegrations', 'IntegrationAttempts', 'InboxMessages')) {
+foreach ($table in @('OrderIntegrations', 'IntegrationAttempts')) {
     if ((Read-LegacySql "SELECT to_regclass('public.`"$table`"') IS NOT NULL;") -eq 't') {
         $integrationSql += Export-Table "public.`"$table`""
     }
 }
+if ((Read-LegacySql "SELECT to_regclass('public.`"InboxMessages`"') IS NOT NULL;") -eq 't') {
+    $inboxQuery = @'
+COPY (
+ SELECT "Consumer", "EventId", "ProcessedAt", 'orders', 'order.created.v1', replace("EventId"::text, '-', ''), ''
+ FROM "InboxMessages"
+) TO STDOUT WITH CSV;
+'@
+    $inbox = (Read-LegacySql $inboxQuery) -join "`n"
+    $integrationSql += @(
+        'SET LOCAL search_path TO public;',
+        'CREATE TEMP TABLE "LegacyInbox" (LIKE "InboxMessages" INCLUDING DEFAULTS) ON COMMIT DROP;',
+        'COPY "LegacyInbox" ("Consumer", "EventId", "ProcessedAt", "Source", "EventType", "IdempotencyKey", "OrderingKey") FROM STDIN WITH CSV;',
+        $inbox, '\.',
+        'INSERT INTO "InboxMessages" SELECT * FROM "LegacyInbox" ON CONFLICT DO NOTHING;'
+    )
+}
 $integrationSql += 'COMMIT;'
 
-Import-Sql 'orders-db' ($ordersSql -join "`n")
-Import-Sql 'integrations-db' ($integrationSql -join "`n")
+Import-Sql 'orders-db' (($ordersSql | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n")
+Import-Sql 'integrations-db' (($integrationSql | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n")
 Write-Host 'Legacy orders, snapshots, integration identities and attempt history imported. Source data is unchanged.'

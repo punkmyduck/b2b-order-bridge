@@ -1,12 +1,18 @@
 <Solution>
+  <Folder Name="/Documentation/"><File Path="../docs/architecture.md" /><File Path="../docs/messaging.md" /></Folder>
   <Folder Name="/Deployment/"><File Path="docker-compose.yml" /><File Path="tools/Import-LegacyDatabase.ps1" /></Folder>
+  <Folder Name="/src/" />
   <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/Shared.Messaging.Abstractions/Shared.Messaging.Abstractions.csproj" />
+    <Project Path="src/BuildingBlocks/Shared.Messaging.Kafka/Shared.Messaging.Kafka.csproj" />
+    <Project Path="src/BuildingBlocks/Shared.Messaging.Persistence/Shared.Messaging.Persistence.csproj" />
     <Project Path="src/BuildingBlocks/Shared.Application/Shared.Application.csproj" />
     <Project Path="src/BuildingBlocks/Shared.Domain/Shared.Domain.csproj" />
   </Folder>
   <Folder Name="/src/Contracts/">
     <Project Path="src/Contracts/OrderBridge.Contracts/OrderBridge.Contracts.csproj" />
   </Folder>
+  <Folder Name="/src/Services/" />
   <Folder Name="/src/Services/Integrations/">
     <File Path="src/Services/Integrations/README.md" />
     <File Path="src/Services/Integrations/Integrations.slnx" />
@@ -23,12 +29,15 @@
     <Project Path="src/Services/Orders/OrderBridge.Orders.Domain/OrderBridge.Orders.Domain.csproj" />
     <Project Path="src/Services/Orders/OrderBridge.Orders.Infrastructure/OrderBridge.Orders.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Services/TelegramBot/" />
   <Folder Name="/src/Web/">
     <Project Path="src/Web/OrderBridge.Web/OrderBridge.Web.csproj" />
   </Folder>
+  <Folder Name="/tests/" />
   <Folder Name="/tests/BuildingBlocks/">
     <Project Path="tests/BuildingBlocks/Shared.Tests/Shared.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Services/" />
   <Folder Name="/tests/Services/Integrations/">
     <Project Path="tests/Services/Integrations/OrderBridge.Integrations.Domain.Tests/OrderBridge.Integrations.Domain.Tests.csproj" />
     <Project Path="tests/Services/Integrations/OrderBridge.Integrations.Infrastructure.Tests/OrderBridge.Integrations.Infrastructure.Tests.csproj" />

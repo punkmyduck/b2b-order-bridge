@@ -153,23 +153,6 @@ namespace OrderBridge.Integrations.Infrastructure.Persistence.Migrations
                     b.ToTable("OrderIntegrations", (string)null);
                 });
 
-            modelBuilder.Entity("OrderBridge.Integrations.Infrastructure.Messaging.InboxMessage", b =>
-                {
-                    b.Property<string>("Consumer")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<Guid>("EventId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Consumer", "EventId");
-
-                    b.ToTable("InboxMessages", (string)null);
-                });
-
             modelBuilder.Entity("OrderBridge.Integrations.Infrastructure.Persistence.IntegrationOrder", b =>
                 {
                     b.Property<Guid>("Id")
@@ -185,6 +168,49 @@ namespace OrderBridge.Integrations.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("IntegrationOrders", (string)null);
+                });
+
+            modelBuilder.Entity("Shared.Messaging.Persistence.InboxMessage", b =>
+                {
+                    b.Property<string>("Consumer")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("OrderingKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Consumer", "EventId");
+
+                    b.HasIndex("Consumer", "Source", "EventType", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("InboxMessages", (string)null);
                 });
 
             modelBuilder.Entity("OrderBridge.Integrations.Application.Features.OrderIntegrations.Models.IntegrationAttempt", b =>

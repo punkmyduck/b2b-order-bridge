@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.Application.Persistence;
+using Shared.Application.Events;
 using Shared.Application.Pagination;
 using Shared.Application.Services;
 using Shared.Application.Results;
@@ -13,7 +14,6 @@ using OrderBridge.Orders.Application.Features.Orders.Commands;
 using OrderBridge.Orders.Application.Features.Orders.Queries;
 using OrderBridge.Orders.Application.Features.Orders.ValueObjects;
 using OrderBridge.Orders.Application.Features.Orders.Repositories;
-using OrderBridge.Orders.Application.Messaging;
 using OrderBridge.Orders.Infrastructure.Persistence;
 
 namespace OrderBridge.Orders.Infrastructure.Tests;
@@ -36,7 +36,7 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         {
             var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
             var work = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            Assert.Same(db, work);
+            Assert.IsType<OrdersUnitOfWork>(work);
             scope.ServiceProvider.GetRequiredService<IRepository<Order, Guid>>().Add(order);
             await work.SaveChangesAsync();
         }
@@ -81,7 +81,8 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         {
             var services = scope.ServiceProvider;
             var handler = new CreateOrderCommandHandler(services.GetRequiredService<IRepository<Order, Guid>>(),
-                services.GetRequiredService<IOrderCreatedOutbox>(), services.GetRequiredService<IUnitOfWork>(), services.GetRequiredService<IDateTimeOffsetProvider>());
+                services.GetRequiredService<IDomainEventDispatcher>(),
+                services.GetRequiredService<IUnitOfWork>(), services.GetRequiredService<IDateTimeOffsetProvider>());
             var result = await handler.Handle(new CreateOrderCommand("portal", Guid.NewGuid().ToString(),
                 new CustomerSnapshotDto("ACME", "123", "test@example.com"), "RUB",
                 [new OrderLineDto("SKU", "Item", 1m, 10m)]), CancellationToken.None);
@@ -90,7 +91,7 @@ public sealed class PersistenceTests(DatabaseFixture fixture) : IClassFixture<Da
         using var read = fixture.Services.CreateScope();
         Assert.True(await read.ServiceProvider.GetRequiredService<IReadRepository<Order, Guid>>().ExistsAsync(id));
         var db = read.ServiceProvider.GetRequiredService<OrdersDbContext>();
-        Assert.Single(await db.OutboxMessages.Where(x => x.OrderId == id).ToListAsync());
+        Assert.Single(await db.OutboxMessages.Where(x => x.OrderingKey == id.ToString("N")).ToListAsync());
     }
 
     [Fact]

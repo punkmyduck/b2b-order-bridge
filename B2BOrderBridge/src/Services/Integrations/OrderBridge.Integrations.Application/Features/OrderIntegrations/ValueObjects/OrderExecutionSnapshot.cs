@@ -13,8 +13,19 @@ public sealed record OrderExecutionSnapshot(
     IReadOnlyList<OrderLineDto> Lines)
 {
     public static OrderExecutionSnapshot FromEvent(OrderSnapshotV1 order) => new(
-        order.Id, order.SourceSystem, order.ExternalOrderId,
-        new CustomerSnapshotDto(order.Customer.CompanyName, order.Customer.TaxId, order.Customer.ContactEmail),
-        order.Currency, order.TotalAmount,
-        order.Lines.Select(line => new OrderLineDto(line.Sku, line.Name, line.Quantity, line.UnitPrice)).ToArray());
+        order.Id,
+        order.SourceSystem,
+        order.ExternalOrderId,
+        new CustomerSnapshotDto(
+            order.Customer.CompanyName,
+            order.Customer.TaxId,
+            order.Customer.ContactEmail),
+        order.Currency,
+        order.TotalAmount,
+        order.Lines.Select(line => new OrderLineDto(
+            line.Sku,
+            line.Name,
+            line.Quantity,
+            line.UnitPrice))
+            .ToArray());
 }

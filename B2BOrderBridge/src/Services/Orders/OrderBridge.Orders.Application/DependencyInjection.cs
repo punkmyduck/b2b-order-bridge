@@ -2,6 +2,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.Application.Behaviors;
+using Shared.Application.Events;
 
 namespace OrderBridge.Orders.Application;
 
@@ -18,6 +19,8 @@ public static class DependencyInjection
             configuration.AddOpenBehavior(typeof(ValidationBehaviour<,>));
             configuration.LicenseKey = mediatRLicenseKey;
         });
+
+        services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 
         services.AddValidatorsFromAssembly(
             typeof(DependencyInjection).Assembly,
