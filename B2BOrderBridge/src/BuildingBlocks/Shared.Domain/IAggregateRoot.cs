@@ -1,5 +1,8 @@
 namespace Shared.Domain;
 
-/// <summary>Marks entities that form a consistency boundary.</summary>
-public interface IAggregateRoot;
-
+/// <summary>A consistency boundary with pending, in-process business facts.</summary>
+public interface IAggregateRoot
+{
+    IReadOnlyCollection<IDomainEvent> DomainEvents { get; }
+    void ClearDomainEvents();
+}
